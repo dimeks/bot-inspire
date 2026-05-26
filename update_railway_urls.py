@@ -1,7 +1,7 @@
 import json
 import re
 
-RAILWAY_DOMAIN = "https://bot-inspire-production.up.railway.app"
+RAILWAY_DOMAIN = "https://bot-inspire-production-84c7.up.railway.app"
 OLD_PATTERNS = [
     "http://localhost:5680",
     "http://localhost:5678",
@@ -12,6 +12,8 @@ OLD_PATTERNS = [
     "http://127.0.0.1:5678",
     # ngrok antigo
     "https://tuneable-gertie-unflamboyantly.ngrok-free.dev",
+    "https://bot-inspire-production.up.railway.app",
+    "http://bot-inspire-production.up.railway.app",
 ]
 
 FILES = [
