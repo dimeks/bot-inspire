@@ -1,0 +1,52 @@
+# Banco de dados / arquivos pesados
+*.sqlite
+database.sqlite
+n8n_data_fresh.sqlite
+
+# Scripts de debug e inspeção
+inspect_*.py
+inspect_*.js
+scratch_*.py
+scratch_*.js
+scratch_*.json
+check_exec_*.js
+get_latest_*.js
+read_pg_*.js
+print_*.js
+print_*.sql
+
+# Arquivos de dados gerados
+medicos_data.json
+raw_slots.json
+pg_context.json
+pg_messages.json
+profs.json
+profs_utf8.json
+cache_clinica.json
+
+# Arquivos de fix/update
+fix_*.js
+add_*.js
+apply_*.py
+remove_*.js
+update_*.js
+restore_*.js
+sync_workflows.js
+format_*.js
+
+# Utilitários locais
+list_nodes.js
+search_scratch.js
+read_cache.js
+
+# Node modules
+node_modules/
+npm-debug.log
+
+# Git
+.git
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,2198 @@
+{
+  "name": "Agente Clinica Inspire — Feegow v3",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-clinica-master",
+        "options": {}
+      },
+      "id": "db4577a5-ed13-4332-aba0-9aff7adb8172",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -7264,
+        41936
+      ],
+      "webhookId": "49bae464-a089-4e12-981f-821be25f872a"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst webhookData = $node[\"Webhook\"].json;\nconst cacheData = $node[\"Get Cache\"]?.json?.medicos || [];\nreturn [{ json: {\n  ...webhookData, medicos: cacheData,\n  feegowToken: \"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJmZWVnb3ciLCJhdWQiOiJwdWJsaWNhcGkiLCJpYXQiOjE3NTA5NDE4NTQsImxpY2Vuc2VJRCI6Nzk3N30.sDJdqWVAAx9eK2zC33ROygjdQR520mM-YL2aAuL7Xag\",\n  feegowBaseUrl: \"https://api.feegow.com/v1/api\",\n  nomeClinica: \"Clinica Inspire\", telefoneClinica: \"552421091217\", pausaMinutos: 5\n} }];\n"
+      },
+      "id": "876b3285-2870-48fb-8af9-b356fc58a012",
+      "name": "Config Clínica",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -7104,
+        41936
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "or",
+          "conditions": [
+            {
+              "id": "is-patient-msg",
+              "leftValue": "={{ ($json.event === 'messages.upsert' || $json.body?.event === 'messages.upsert') && !($json.data?.key?.fromMe || $json.body?.data?.key?.fromMe || $json.key?.fromMe || false) && !($json.data?.key?.remoteJid || '').endsWith('@g.us') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "272ac458-8980-49cf-8804-9f57a54c83f5",
+      "name": "Filtrar Loop e Grupos",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -6944,
+        41744
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst raw = $input.item.json;\nconst medicos = $node['Config Clínica']?.json?.medicos ?? [];\nconst nomeClinica = $node['Config Clínica']?.json?.nomeClinica || \"Clínica Inspire\";\nconst telefoneClinica = $node['Config Clínica']?.json?.telefoneClinica || \"5511999999999\";\n\nif (raw.test === true) {\n const testText = (raw.text || '').replace(/^#/, '').trim();\n return [{ json: {\n  text:    testText,\n  number:   raw.number  || 'TEST_USER',\n  instance:  raw.instance || 'test_instance',\n  messageId:  'test_' + Date.now(),\n  messageType: raw.messageType || 'conversation',\n  isTestMode: true,\n  medicos,\n  nomeClinica,\n  telefoneClinica\n }}];\n}\n\nconst body = raw.body ?? raw;\nconst data = body.data ?? body;\nconst key = data.key ?? {};\n\nconst text = (\n data.message?.conversation ||\n data.message?.extendedTextMessage?.text ||\n ''\n).trim();\n\nconst number = (key.remoteJid || data.remoteJid || body.sender || '')\n .replace('@s.whatsapp.net', '')\n .replace('@c.us', '');\n\nconst instance = body.instance ?? raw.instance ?? '';\nconst messageId = key.id ?? `fallback_${Date.now()}`;\n\nconst messageType = data.messageType ||\n (data.message?.imageMessage ? 'imageMessage' :\n  data.message?.documentMessage ? 'documentMessage' : 'conversation');\n\nif (!number) throw new Error('remoteJid ausente');\n\nreturn [{ json: { text, number, instance, messageId, messageType, isTestMode: false, medicos, nomeClinica, telefoneClinica } }];\n"
+      },
+      "id": "5cd5c0fa-b4b3-478e-9993-e539b1d906c5",
+      "name": "Extrair Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6752,
+        41936
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const extracted = $node['Extrair Mensagem'].json;\nreturn [{ json: { message_id: extracted.messageId, isTestMode: extracted.isTestMode || false, nomeClinica: extracted.nomeClinica, telefoneClinica: extracted.telefoneClinica } }];\n"
+      },
+      "id": "c6f220b5-585a-4b0e-a508-f99775cea265",
+      "name": "Deduplicar Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6576,
+        41744
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-dedup",
+              "leftValue": "={{ $json.message_id !== undefined && $json.message_id !== null && $json.message_id !== '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9f32eeeb-a31f-4de4-b675-2a4f9b4fff89",
+      "name": "É mensagem nova?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -6416,
+        41744
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT state, context, bot_paused_until \nFROM user_states \nWHERE phone = '{{ $node[\"Extrair Mensagem\"].json.number }}'",
+        "options": {}
+      },
+      "id": "2dd6af8f-8044-4f1b-a2bd-e936ff6fd98a",
+      "name": "Get State",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [
+        -6224,
+        41936
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "r1y1J2gyb8fLwkVR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst extracted = $node['Extrair Mensagem'].json;\nconst textOriginal = (extracted.text || '').trim();\n\nfunction normalizarFonetico(t) {\n return t.toLowerCase()\n  .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n  .replace(/ss|\\u00e7/g, 's').replace(/ph/g, 'f').replace(/qu/g, 'c')\n  .replace(/k/g, 'c').replace(/([a-zA-Z])\\1+/g, '$1')\n  .replace(/[^\\w\\s]/g, ' ').trim();\n}\n\nfunction levenshtein(a, b) {\n const m = a.length, n = b.length;\n const dp = Array.from({length:m+1},(_,i)=>Array.from({length:n+1},(_,j)=>i===0?j:j===0?i:0));\n for(let i=1;i<=m;i++) for(let j=1;j<=n;j++)\n  dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);\n return dp[m][n];\n}\n\nfunction corrigirTexto(t) {\n const dic=['agendar','marcar','consulta','cancelar','remarcar','confirmar',\n  'desmarcar','agendamento','voltar','menu','sim','nao','ok','pode','certo',\n  'particular','plano','convenio','carteirinha','unimed','sulamerica',\n  'bradesco','amil','hapvida','manha','tarde','hoje','amanha',\n  'filho','filha','esposa','esposo','mae','pai','irmao','irma','bebe'];\n return t.split(' ').map(p=>{\n  if(p.length<=3) return p;\n  let best=p,dist=Infinity,tol=p.length<=5?1:2;\n  for(const c of dic){ if(Math.abs(p.length-c.length)>3) continue;\n   const d=levenshtein(p,c); if(d<dist&&d<=tol){dist=d;best=c;} }\n  return best;\n }).join(' ');\n}\n\nfunction interpretarIntencao(t) {\n const s={agendar:0,cancelar:0,ver:0,confirmar:0,negar:0,para_mim:0,para_outro:0,particular:0,plano:0};\n if(/\\b(agendar|marcar|reservar)\\b/.test(t)) s.agendar+=3;\n if(/\\b(consulta|atendimento|horario|vaga)\\b/.test(t)) s.agendar+=2;\n if(/\\b(cancelar|desmarcar)\\b/.test(t)) s.cancelar+=3;\n if(/\\b(remarcar|mudar|trocar)\\b/.test(t)) s.cancelar+=2;\n if(/\\b(ver|listar|mostrar|quais)\\b/.test(t)) s.ver+=2;\n if(/\\b(agendamento|marcado|consultas)\\b/.test(t)) s.ver+=3;\n if(/\\b(sim|confirmar|ok|certo|pode|perfeito|isso)\\b/.test(t)) s.confirmar+=3;\n if(/\\b(nao|nunca|errado|outro|outra)\\b/.test(t)) s.negar+=2;\n if(/\\b(mim|eu|meu|minha|proprio)\\b/.test(t)) s.para_mim+=2;\n if(/\\b(filho|filha|mae|pai|esposo|esposa|bebe|crianca|outro|outra|familiar)\\b/.test(t)) s.para_outro+=2;\n if(/\\b(particular|dinheiro|pix|cartao|sem plano)\\b/.test(t)) s.particular+=3;\n if(/\\b(plano|convenio|unimed|sulamerica|bradesco|amil|hapvida|carteirinha)\\b/.test(t)) s.plano+=3;\n return s;\n}\n\nfunction getEmojiNum(index) {\n  const n = index + 1;\n  if (n === 10) return '\\u{1F51F}';\n  const digits = ['0\\uFE0F\\u20E3', '1\\uFE0F\\u20E3', '2\\uFE0F\\u20E3', '3\\uFE0F\\u20E3', '4\\uFE0F\\u20E3', '5\\uFE0F\\u20E3', '6\\uFE0F\\u20E3', '7\\uFE0F\\u20E3', '8\\uFE0F\\u20E3', '9\\uFE0F\\u20E3'];\n  return String(n).split('').map(d => digits[parseInt(d)]).join('');\n}\n\nfunction menuMedicos(lista, payment, planName) {\n let menu = lista.map((m,i)=>{\n  let extra='';\n  if(payment==='plano'&&planName) extra=` (${limparNomePlano(planName)})`;\n  const esp = m.especialidade ? ` \\u2014 ${m.especialidade}` : '';\n  const emoji = getEmojiNum(i);\n  return `${emoji} *${m.nome}*${esp}${extra}`;\n }).join('\\n');\n\n const nextIdx = lista.length;\n const emoji = getEmojiNum(nextIdx);\n menu += `\\n\\n${emoji} *Sem preferência profissional* (ver horários de todos)`;\n return menu;\n}\n\nfunction filtrarMedicos(lista, payment, planName, idade) {\n return lista.filter(m=>{\n  if(payment==='plano'&&planName&&m.planos&&m.planos.length>0){\n   const match = m.planos.some(p => {\n    const n = (typeof p === 'string') ? p : (p.nome || '');\n    return normalizarFonetico(n).includes(normalizarFonetico(planName));\n   });\n   if(!match) return false;\n  }\n  if(idade!=null){ if(idade<(m.idadeMin||0)||idade>(m.idadeMax||200)) return false; }\n  return true;\n });\n}\n\nfunction limparNomePlano(nome) {\n  return nome.replace(/^\\d+[\\s.-]*/, '').trim();\n}\n\nfunction obterPlanosUnicos(medicos, idade) {\n  const planosMap = new Map();\n  medicos.forEach(m => {\n    if (idade != null) {\n      if (idade < (m.idadeMin || 0) || idade > (m.idadeMax || 200)) return;\n    }\n    if (Array.isArray(m.planos)) {\n      m.planos.forEach(p => {\n        if (p && p.id && p.nome) {\n          if (p.nome.toLowerCase().includes('cortesia')) return;\n          planosMap.set(Number(p.id), p.nome);\n        }\n      });\n    }\n  });\n  return Array.from(planosMap.entries()).map(([id, nome]) => ({ id, nome })).sort((a,b) => a.nome.localeCompare(b.nome));\n}\n\nfunction extrairIdade(fr) {\n const m=fr.match(/\\b(\\d{1,3})\\s*(anos?)?/i); return m?parseInt(m[1]):null;\n}\n\nfunction validarCPF(cpf) {\n  cpf = cpf.replace(/[^\\d]+/g, '');\n  if (cpf.length !== 11) return false;\n  if (/^(\\d)\\1{10}$/.test(cpf)) return false;\n  let soma = 0;\n  let resto;\n  for (let i = 1; i <= 9; i++) soma = soma + parseInt(cpf.substring(i - 1, i)) * (11 - i);\n  resto = (soma * 10) % 11;\n  if ((resto === 10) || (resto === 11)) resto = 0;\n  if (resto !== parseInt(cpf.substring(9, 10))) return false;\n  soma = 0;\n  for (let i = 1; i <= 10; i++) soma = soma + parseInt(cpf.substring(i - 1, i)) * (12 - i);\n  resto = (soma * 10) % 11;\n  if ((resto === 10) || (resto === 11)) resto = 0;\n  if (resto !== parseInt(cpf.substring(10, 11))) return false;\n  return true;\n}\n\nfunction extrairCPF(str) {\n  const m = str.match(/\\b\\d{3}\\.?\\d{3}\\.?\\d{3}-?\\d{2}\\b/);\n  if (m) return m[0].replace(/\\D/g, '');\n  const m2 = str.match(/\\b\\d{11}\\b/);\n  if (m2) return m2[0];\n  const clean = str.replace(/\\D/g, '');\n  if (clean.length === 11) return clean;\n  return null;\n}\n\nconst textNorm = normalizarFonetico(textOriginal);\nconst text = corrigirTexto(textNorm);\nconst intencao = interpretarIntencao(text);\nconst number = extracted.number;\nconst instance = extracted.instance;\nconst messageType = extracted.messageType;\nconst medicos = extracted.medicos || [];\nconst nomeClinica = extracted.nomeClinica || 'Clinica Inspire';\nconst telefoneClinica = extracted.telefoneClinica || '552421091217';\n\nconst db = $input.item.json;\nlet state = (db.state && db.state !== '') ? db.state : 'START';\nlet context = db.context || {};\nif(typeof context === 'string'){ try{ context=JSON.parse(context); }catch(e){ context={}; } }\n\nconst menuMsg = ` *Bem-vindo \\u00E0 ${nomeClinica}!* \\n\\nComo posso ajudar voc\\u00EA hoje?\\n\\n1\\uFE0F\\u20E3 *Agendar nova consulta*\\n2\\uFE0F\\u20E3 *Ver meus agendamentos*\\n3\\uFE0F\\u20E3 *Cancelar ou remarcar*\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*\\n\\n_Digite o n\\u00FAmero da op\\u00E7\\u00E3o._`;\n\nlet reply = '';\nlet action = 'NONE';\n\nfunction optionMatch(inp, num) {\n return new RegExp(`(^|\\\\s)${num}([.\\\\s]|$)`).test(inp);\n}\n\nif(text==='0'){\n state='START'; context={};\n return [{ json:{ reply:menuMsg, state, context, action:'NONE', number, instance, medicos, nomeClinica, telefoneClinica } }];\n}\n\nconst greetings=['oi','ola','menu','inicio','reset','voltar','bom dia','boa tarde','boa noite','ajuda'];\nif(!db.state||greetings.includes(text)){ state='START'; context={}; }\n\nswitch(state) {\n\n case 'START':\n  reply = menuMsg;\n  state = 'MENU';\n  break;\n\n case 'MENU':\n  if(optionMatch(text,1)||intencao.agendar>=2||text.includes('agendar')||text.includes('marcar')||text.includes('consulta')) {\n   reply = 'Excelente! A consulta \\u00E9 para *voc\\u00EA* ou para *outra pessoa*?\\n\\n1\\uFE0F\\u20E3 *Para mim*\\n2\\uFE0F\\u20E3 *Para outra pessoa*\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*';\n   state = 'WAIT_PATIENT_TYPE';\n  } else if(optionMatch(text,2)||intencao.ver>=3||text.includes('ver')||text.includes('agendamento')) {\n   reply = 'Informe o *NOME COMPLETO* do paciente:\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*';\n   state = 'WAIT_VIEW_NAME';\n  } else if(optionMatch(text,3)||intencao.cancelar>=3||text.includes('cancelar')||text.includes('remarcar')) {\n   reply = 'Informe o *NOME COMPLETO* do paciente:\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*';\n   state = 'WAIT_CANCEL_NAME';\n  } else {\n   reply = 'Op\\u00E7\\u00E3o n\\u00E3o reconhecida. Escolha *1*, *2* ou *3*.\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*';\n  }\n  break;\n\n case 'WAIT_PATIENT_TYPE':\n  if(optionMatch(text,1)||intencao.para_mim>=2||text.includes('mim')||text.includes('eu')) {\n   context.for_self=true;\n  } else if(optionMatch(text,2)||intencao.para_outro>=2||text.includes('outra')) {\n   context.for_self=false;\n  } else {\n   reply='Responda *1* (para mim) ou *2* (para outra pessoa).\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*'; break;\n  }\n  reply='Qual o *NOME COMPLETO* e *IDADE* do paciente?\\n\\n_Ex: Maria Silva, 32 anos_\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*';\n  state='WAIT_NAME_AGE';\n  break;\n\n case 'WAIT_NAME_AGE': {\n  const rawInput=(extracted.text||'').trim();\n  const idadeEx=extrairIdade(rawInput);\n  let nomeEx=rawInput.replace(/,?\\s*\\d{1,3}\\s*(anos?)?/i,'').trim();\n  if(!nomeEx||nomeEx.split(' ').filter(w=>w.length>1).length<2||nomeEx.length<5){\n   reply='Informe o *nome completo* (nome e sobrenome).\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*'; break;\n  }\n  context.patient_name=nomeEx; context.patient_idade=idadeEx;\n  reply='Por favor, informe o *CPF* do paciente:\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*';\n  state='WAIT_CPF'; break;\n }\n\n case 'WAIT_CPF': {\n  const rawInput=(extracted.text||'').trim();\n  const cpfEx=extrairCPF(rawInput);\n  if(!cpfEx || !validarCPF(cpfEx)) {\n   reply='⚠️ *CPF inválido!* Por favor, digite um CPF válido contendo 11 dígitos (somente números ou formatado):\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*';\n   break;\n  }\n  context.patient_cpf=cpfEx;\n  reply='Como ser\\u00E1 o atendimento?\\n\\n1\\uFE0F\\u20E3 *Particular*\\n2\\uFE0F\\u20E3 *Plano de sa\\u00FAde*\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*';\n  state='WAIT_PAYMENT'; break;\n }\n\n case 'WAIT_PAYMENT':\n   if(intencao.particular>=3||text.includes('particular')||(optionMatch(text,1)&&!text.includes('plano'))) {\n    context.payment='particular';\n    const s1=filtrarMedicos(medicos,'particular',null,context.patient_idade);\n    if(s1.length===0){ reply='Nenhum médico disponível.\\n\\n0️⃣ *Voltar ao menu*'; state='MENU'; context={}; break; }\n    context.suggested=s1;\n    reply=`Ótimo! Escolha o médico:\\n\\n${menuMedicos(s1,'particular')}\\n\\n0️⃣ *Voltar ao menu*`;\n    state='WAIT_DOCTOR_CHOICE';\n   } else if(intencao.plano>=3||text.includes('plano')||optionMatch(text,2)) {\n    context.payment='plano';\n    const planos = obterPlanosUnicos(medicos, context.patient_idade).slice(0, 10);\n    if (planos.length === 0) {\n      reply = 'No momento não temos planos de saúde cadastrados. Escolha *1* para Particular.\\n\\n0️⃣ *Voltar ao menu*';\n      break;\n    }\n    context.planos_disponiveis = planos;\n    reply = 'Selecione o seu *plano de saúde*:\\n\\n';\n    planos.forEach((p, idx) => {\n      const emoji = getEmojiNum(idx);\n      reply += `${emoji} *${limparNomePlano(p.nome)}*\\n`;\n    });\n    reply += '\\n0️⃣ *Voltar ao menu*';\n    state = 'WAIT_PLAN_CHOICE';\n   } else {\n    reply = 'Responda *1* (particular) ou *2* (plano de saúde).\\n\\n0️⃣ *Voltar ao menu*';\n   }\n   break;\n\n  case 'WAIT_PLAN_CHOICE': {\n   const pIdx = parseInt(text) - 1;\n   const planos = context.planos_disponiveis || [];\n   if (!isNaN(pIdx) && planos[pIdx]) {\n    const selectedPlan = planos[pIdx];\n    context.plan = selectedPlan.nome;\n    const s2 = filtrarMedicos(medicos, 'plano', selectedPlan.nome, context.patient_idade);\n    context.suggested = s2;\n    reply = `Ótimo! Agora escolha o médico:\\n\\n${menuMedicos(s2, context.payment, context.plan)}\\n\\n0️⃣ *Voltar ao menu*`;\n    state = 'WAIT_DOCTOR_CHOICE';\n   } else {\n    reply = `Opção inválida. Digite um número de 1 a ${planos.length}.\\n\\n0️⃣ *Voltar ao menu*`;\n   }\n   break;\n  }\n\n  case 'WAIT_CARD': {\n   if(optionMatch(text,1) || text.includes('levar') || extracted.messageType === 'imageMessage') {\n    const listaD=context.suggested||medicos;\n    reply=`Recebido! Agora escolha o médico:\\n\\n${menuMedicos(listaD,context.payment,context.plan)}\\n\\n0️⃣ *Voltar ao menu*`;\n    state='WAIT_DOCTOR_CHOICE';\n   } else {\n    reply='Por favor, envie uma *foto da carteirinha* ou escolha:\\n\\n1️⃣ *Vou levar no dia* da consulta\\n\\n0️⃣ *Voltar ao menu*';\n   }\n   break;\n  }\n\n  case 'WAIT_DOCTOR_CHOICE': {\n   const idxD=parseInt(text)-1;\n   const listaD=context.suggested||medicos;\n   if(!isNaN(idxD)&&listaD[idxD]) {\n    const selectedDoc = listaD[idxD];\n    \n    // Regra especial Dr. André via convênio (Plano de Saúde)\n    if (context.payment === 'plano' && (Number(selectedDoc.profissionalId) === 2 || Number(selectedDoc.profissional_id) === 2 || (selectedDoc.nome || '').toLowerCase().includes('andre'))) {\n      reply = `⚠️ *Agendamento via Plano de Saúde com o Dr. André:*\\n\\nComo o Dr. André atende pelo convênio apenas uma vez por mês, os agendamentos via plano devem ser realizados exclusivamente com a nossa recepção.\\n\\nPor favor, fale diretamente com nossa atendente pelo telefone *${telefoneClinica}* para prosseguir com seu agendamento.\\n\\n0️⃣ *Voltar ao menu principal*`;\n      state = 'START';\n      context = {};\n      break;\n    }\n\n    context.doctor=selectedDoc;\n    const procs=(context.doctor.procedimentos||[]).filter(p => {\n      const n = p.tipo.toLowerCase();\n      return !n.includes('retorno') && !n.includes('receita') && !n.includes('online') && !n.includes('on-line');\n    });\n    context.doctor.procedimentos = procs;\n\n    if(procs.length<=1) {\n     if(procs.length===1){\n      context.doctor.procedimentoId=procs[0].procedimentoId;\n      context.doctor.valorParticular=procs[0].valorParticular;\n     }\n     reply=`Buscando horários para *${context.doctor.nome}*... `;\n     action='FETCH_SLOTS'; state='FETCHING';\n    } else {\n     let msg=`Qual tipo de consulta com *${context.doctor.nome}*?\\n\\n`;\n     procs.forEach((p,i)=>{\n      let preco='';\n      if(context.payment==='particular'&&p.valorParticular>0)\n       preco=` \\u2014 R$ ${Number(p.valorParticular).toFixed(2)}`;\n      const emoji = getEmojiNum(i);\n      msg+=`${emoji} *${p.tipo}*${preco}\\n`;\n     });\n     msg+='\\n0️⃣ *Voltar ao menu*';\n     reply=msg; state='WAIT_PROCEDURE_TYPE';\n    }\n   } else if(!isNaN(idxD) && idxD === listaD.length) {\n    reply = 'Qual tipo de consulta você deseja?\\n\\n1️⃣ *Consulta*\\n2️⃣ *Primeira Consulta*\\n\\n0️⃣ *Voltar ao menu*';\n    state = 'WAIT_SEM_PREF_PROCEDURE';\n   } else {\n    reply=`Opção inválida. Escolha entre 1 e ${listaD.length + 1}.\\n\\n0️⃣ *Voltar ao menu*`;\n   }\n   break;\n  }\n\n  case 'WAIT_SEM_PREF_PROCEDURE': {\n   let selectedType = null;\n   if (optionMatch(text, 1) || (text.toLowerCase().includes('consulta') && !text.toLowerCase().includes('primeira'))) {\n    selectedType = 'consulta';\n   } else if (optionMatch(text, 2) || text.toLowerCase().includes('primeira')) {\n    selectedType = 'primeira consulta';\n   }\n\n   if (selectedType) {\n    const listaD = context.suggested || medicos;\n    const eligible = [];\n    listaD.forEach(doc => {\n      // Regra especial Dr. André via convênio (Plano de Saúde)\n      if (context.payment === 'plano' && (Number(doc.profissionalId) === 2 || Number(doc.profissional_id) === 2 || (doc.nome || '').toLowerCase().includes('andre'))) {\n        return; // Pula o Dr. André na busca de planos sem preferência\n      }\n      \n      const procsFiltered = (doc.procedimentos || []).filter(p => {\n        const n = p.tipo.toLowerCase();\n        return !n.includes('retorno') && !n.includes('receita') && !n.includes('online') && !n.includes('on-line');\n      });\n      const matchProc = procsFiltered.find(p => p.tipo.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '') === selectedType);\n      if (matchProc) {\n        eligible.push({\n          ...doc,\n          procedimentoId: matchProc.procedimentoId,\n          valorParticular: matchProc.valorParticular\n        });\n      }\n    });\n\n    if (eligible.length === 0) {\n      reply = 'Não há médicos elegíveis para este tipo de atendimento.\\n\\n0️⃣ *Voltar ao menu*';\n      break;\n    }\n\n    context.eligible_doctors = eligible;\n    context.doctor = { sem_preferência: true, nome: 'Sem preferência' };\n    reply = 'Buscando horários disponíveis...';\n    action = 'FETCH_SLOTS'; state = 'FETCHING';\n   } else {\n    reply = 'Opção inválida. Escolha:\\n\\n1️⃣ *Consulta*\\n2️⃣ *Primeira Consulta*\\n\\n0️⃣ *Voltar ao menu*';\n   }\n   break;\n  }\n\n  case 'SELECT_SLOT': {\n   const slots = context.slots || [];\n   const allSlots = context.allSlots || [];\n   \n   if (optionMatch(text, 5) && allSlots.length > (context.slotOffset + 4)) {\n    context.slotOffset = (context.slotOffset || 0) + 4;\n    action = 'FORMAT_SLOTS';\n    reply = '*Carregando mais horários...*';\n    break;\n   }\n   \n   const idxS = parseInt(text) - 1;\n   if (!isNaN(idxS) && slots[idxS]) {\n    const selectedSlot = slots[idxS];\n    context.selected_slot = selectedSlot;\n    if (selectedSlot.doctor) {\n      context.doctor = selectedSlot.doctor;\n    }\n    \n    let dtStr = selectedSlot.label || 'Data selecionada';\n    dtStr = dtStr.replace(/\\s*\\([^)]+\\)$/, ''); // Remove nome do médico do label se tiver\n    \n    let preco = '';\n    if (context.payment === 'particular' && context.doctor && context.doctor.valorParticular) {\n      preco = `\\n*Valor:* R$ ${Number(context.doctor.valorParticular).toFixed(2)}`;\n    }\n    \n    const displayCpf = context.patient_cpf ? context.patient_cpf.replace(/(\\d{3})(\\d{3})(\\d{3})(\\d{2})/, \"$1.$2.$3-$4\") : '';\n    \n    reply = `*Confirmar agendamento?*\\n\\n*Médico:* ${context.doctor ? context.doctor.nome : ''}\\n*Data/hora:* ${dtStr}\\n*Paciente:* ${context.patient_name || ''}\\n*CPF:* ${displayCpf}\\n*Atendimento:* ${context.payment === 'plano' ? 'Plano — ' + (context.plan || '') : 'Particular'}${preco}\\n\\n1️⃣ *Confirmar*\\n2️⃣ *Escolher outro horário*\\n3️⃣ *Cancelar*\\n\\n0️⃣ *Voltar ao menu*`;\n    state = 'CONFIRM_BOOKING';\n   } else {\n    reply = `Opção inválida. Digite o número correspondente ao horário desejado (1 a ${slots.length}) ou 5 para ver mais horários.\\n\\n0️⃣ *Voltar ao menu*`;\n   }\n   break;\n  }\n\n  case 'WAIT_PROCEDURE_TYPE': {\n   const procs=context.doctor?.procedimentos||[];\n   const idxP=parseInt(text)-1;\n   if(!isNaN(idxP)&&procs[idxP]) {\n    const proc=procs[idxP];\n    context.doctor.procedimentoId=proc.procedimentoId;\n    context.doctor.valorParticular=proc.valorParticular;\n    reply=`Buscando horários para *${context.doctor.nome}* \\u2014 ${proc.tipo}... `;\n    action='FETCH_SLOTS'; state='FETCHING';\n   } else {\n    let msg=`Opção inválida. Escolha:\\n\\n`;\n    procs.forEach((p,i)=>{\n     let preco='';\n     if(context.payment==='particular'&&p.valorParticular>0)\n      preco=` \\u2014 R$ ${Number(p.valorParticular).toFixed(2)}`;\n     const emoji = getEmojiNum(i);\n     msg+=`${emoji} *${p.tipo}*${preco}\\n`;\n    });\n    msg+='\\n0️⃣ *Voltar ao menu*';\n    reply=msg;\n   }\n   break;\n  }\n\n  case 'FETCHING':\n   reply='*Aguarde!* Consultando a agenda...'; break;\n\n  case 'WAIT_CALENDAR_SELECTION': {\n   if (text === '0') {\n     reply = menuMsg;\n     state = 'MENU';\n     context = {};\n   } else {\n     reply = `⚠️ *Você tem um agendamento em andamento.*\\n\\nPor favor, use o link do calendário que enviei acima para escolher seu horário.\\n\\n_Se preferir, digite *0* a qualquer momento para voltar ao menu principal._`;\n   }\n   break;\n  }\n\n case 'CONFIRM_BOOKING':\n  if(optionMatch(text,1)||intencao.confirmar>=3||text.includes('confirmar')||text.includes('sim')) {\n   action='CREATE_EVENT'; state='CHECKING_AVAILABILITY'; reply='*Verificando disponibilidade...*';\n  } else if(optionMatch(text,2)||text.includes('outro')) {\n   action = 'FORMAT_SLOTS';\n   reply = '*Carregando calendário...*';\n  } else if(optionMatch(text,3)||text.includes('cancelar')) {\n   reply='Agendamento cancelado.\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*'; state='MENU'; context={};\n  } else {\n   reply='Responda *1* (confirmar), *2* (outro horário) ou *3* (cancelar).\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*';\n  }\n  break;\n\n case 'CHECKING_AVAILABILITY':\n  reply='*Aguarde, verificando disponibilidade...*'; break;\n\n case 'BOOKING_DONE':\n  reply=menuMsg; state='MENU'; context={}; break;\n\n case 'WAIT_VIEW_NAME': {\n  context.view_name=(extracted.text||'').trim();\n  if(medicos.length===0){ reply='Nenhum m\\u00E9dico cadastrado.\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*'; state='MENU'; context={}; break; }\n  context.doctor=medicos[0]; context.view_only=true;\n  action='LIST_EVENTS'; state='FETCHING_EVENTS';\n  reply=`*Buscando agendamentos para ${context.view_name}...*`; break;\n }\n\n case 'WAIT_CANCEL_NAME': {\n  context.cancel_name=(extracted.text||'').trim();\n  if(medicos.length===1) {\n   context.doctor=medicos[0];\n   action='LIST_EVENTS'; state='FETCHING_EVENTS';\n   reply=`Buscando consultas para *${context.cancel_name}*...`;\n  } else {\n   reply=`Para qual m\\u00E9dico?\\n\\n${medicos.map((m,i)=>{\n    const emoji = getEmojiNum(i);\n    return `${emoji} *${m.nome}*`;\n   }).join('\\n')}\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*`;\n   state='WAIT_CANCEL_DOCTOR';\n  }\n  break;\n }\n\n case 'WAIT_CANCEL_DOCTOR': {\n  const idxCan=parseInt(text)-1;\n  if(!isNaN(idxCan)&&medicos[idxCan]) {\n   context.doctor=medicos[idxCan];\n   action='LIST_EVENTS'; state='FETCHING_EVENTS';\n   reply=`Buscando consultas para *${context.cancel_name}* com Dr(a). ${context.doctor.nome}...`;\n  } else {\n   reply=`Op\\u00E7\\u00E3o inv\\u00E1lida. Escolha entre 1 e ${medicos.length}.\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*`;\n  }\n  break;\n }\n\n case 'FETCHING_EVENTS':\n  reply='*Buscando consultas agendadas...*'; break;\n\n case 'SELECT_EVENT': {\n  const idxEv=parseInt(text)-1;\n  const evts=context.found_events||[];\n  if(!isNaN(idxEv)&&evts[idxEv]) {\n   context.selected_event=evts[idxEv];\n   const ev=evts[idxEv];\n   reply=`Consulta selecionada:\\n*${ev.data||''} \\u00E0s ${ev.hora_inicio||''}*\\nM\\u00E9dico: ${ev.medico||''}\\n\\nO que deseja fazer?\\n1\\uFE0F\\u20E3 *Cancelar*\\n2\\uFE0F\\u20E3 *Remarcar*\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*`;\n   state='CONFIRM_CANCEL';\n  } else {\n   reply=`Op\\u00E7\\u00E3o inv\\u00E1lida. Escolha entre 1 e ${evts.length||1}.\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*`;\n  }\n  break;\n }\n\n case 'CONFIRM_CANCEL':\n  if(optionMatch(text,1)||text.includes('cancelar')) {\n   action='CANCEL_EVENT'; state='CANCEL_DONE'; reply='*Cancelando a consulta...*';\n  } else if(optionMatch(text,2)||text.includes('remarcar')) {\n   action='CANCEL_EVENT'; context.remarcar=true; state='CANCEL_DONE'; reply='*Remarcando...*';\n  } else {\n   reply='Responda *1* (cancelar) ou *2* (remarcar) ou *0* (voltar ao menu).';\n  }\n  break;\n\n default:\n  reply=`Algo deu errado. Digite *menu* para recome\\u00E7ar.\\n\\nD\\u00FAvidas: ${telefoneClinica} \\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*`;\n  state='START'; context={};\n}\n\nreturn [{ json:{ reply, state, context, action, number, instance, medicos, nomeClinica, telefoneClinica } }];\n"
+      },
+      "id": "8a8eb4c3-112a-4c9f-bb78-88d4f0e2f220",
+      "name": "Master Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6032,
+        41936
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "rule-check-slot",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "CHECK_SLOT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "rule-fetch-slots",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "FETCH_SLOTS",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "rule-create-event",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "CREATE_EVENT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "rule-fetch-events",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "LIST_EVENTS",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "rule-delete-event",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "CANCEL_EVENT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "rule-none",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "NONE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "rule-format-slots",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "FORMAT_SLOTS",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "id": "d858b4b7-a5df-4fce-804a-9d52cb345d88",
+      "name": "Switch Ação",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -5856,
+        41744
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst engine = $node['Master Engine'].json;\nconst ctx = engine.context || {};\nconst baseUrl = $node['Config Clínica'].json.feegowBaseUrl;\nconst token = $node['Config Clínica'].json.feegowToken;\nconst headers = { 'x-access-token': token, 'Content-Type': 'application/json' };\nconst telefoneClinica = $node['Config Clínica'].json.telefoneClinica || '';\n\nfunction formatDateBR(date) {\n  const d = String(date.getDate()).padStart(2,'0');\n  const m = String(date.getMonth()+1).padStart(2,'0');\n  const y = date.getFullYear();\n  return `${d}-${m}-${y}`;\n}\n\nasync function fetchSlotsOnce(url) {\n  const r = await this.helpers.request({ method:'GET', url, headers, json:true, timeout: 300000 });\n  if (r && r.success === false) {\n    throw new Error('API success=false: ' + JSON.stringify(r).substring(0, 200));\n  }\n  return r.content?.profissional_id || r.content || {};\n}\n\nasync function fetchSlots(days) {\n  const now = new Date();\n  const data_start = formatDateBR(now);\n  const future = new Date();\n  future.setDate(future.getDate() + days);\n  const data_end = formatDateBR(future);\n\n  function buildUrl(doctor) {\n    let url = `${baseUrl}/appoints/available-schedule?tipo=P&procedimento_id=${doctor.procedimentoId}&profissional_id=${doctor.profissionalId}&unidade_id=0&data_start=${data_start}&data_end=${data_end}`;\n    if (ctx.payment === 'plano' && ctx.plan) {\n      const pNorm = ctx.plan.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\n      const pMatch = (doctor.planos || []).find(p => (p.nome || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').includes(pNorm));\n      if (pMatch) url += `&convenio_id=${pMatch.id}`;\n    }\n    return url;\n  }\n\n  const doctorsToFetch = ctx.doctor.sem_preferência ? (ctx.eligible_doctors || []) : [ctx.doctor];\n  const promises = doctorsToFetch.map(async (doc) => {\n    const url = buildUrl(doc);\n    const MAX_RETRIES = 5;\n    const RETRY_DELAY_MS = 3000;\n\n    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {\n      try {\n        console.log(`Feegow slots for ${doc.nome} attempt ${attempt}/${MAX_RETRIES}: ${url}`);\n        const result = await fetchSlotsOnce.call(this, url);\n        console.log(`Feegow slots for ${doc.nome} attempt ${attempt} SUCCESS`);\n        return { doc, result };\n      } catch(e) {\n        console.error(`Feegow slots for ${doc.nome} attempt ${attempt} FAILED: ${e.message}`);\n        if (attempt < MAX_RETRIES) {\n          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));\n        }\n      }\n    }\n    console.error(`All ${MAX_RETRIES} Feegow attempts failed for ${doc.nome}.`);\n    return { doc, result: null };\n  });\n\n  const results = await Promise.all(promises);\n  const mergedMap = {};\n  results.forEach(({ doc, result }) => {\n    if (result && typeof result === 'object') {\n      Object.entries(result).forEach(([profId, profVal]) => {\n        mergedMap[profId] = {\n          ...profVal,\n          doctorName: doc.nome,\n          doctorData: doc\n        };\n      });\n    }\n  });\n\n  return mergedMap;\n}\n\nconst profMap = await fetchSlots(30);\n\nif (Object.keys(profMap).length === 0) {\n  return [{ json: { reply: `Tivemos uma instabilidade temporária ao consultar os horários. Por favor, tente novamente em instantes ou fale conosco pelo telefone *${telefoneClinica}*.\\n\\n0️⃣ *Voltar ao menu*`, state: 'MENU', context: {}, action: 'NONE', number: engine.number, instance: engine.instance } }];\n}\n\nconst allSlots = processMap(profMap);\n\nfunction processMap(map) {\n  const list = [];\n  if (!map || typeof map !== 'object') return list;\n  const diasSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'S\\u00E1b'];\n  const forbiddenLocals = [\"4\", \"12\"];\n  const agoraBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));\n  \n  Object.entries(map).forEach(([profId, prof]) => {\n    const docName = prof.doctorName || '';\n    const docData = prof.doctorData || null;\n    const locals = Array.isArray(prof?.local_id) ? prof.local_id : (prof?.local_id ? [prof.local_id] : []);\n    locals.forEach(loc => {\n      if (!loc) return;\n      Object.entries(loc).forEach(([localKey, val]) => {\n        if (localKey === 'age_restriction') return;\n        if (forbiddenLocals.includes(String(localKey))) return;\n\n        const target = (val && typeof val === 'object' && !Array.isArray(val)) ? val : { [localKey]: val };\n        \n        Object.entries(target).forEach(([dateStr, horasRaw]) => {\n          const horasArr = Array.isArray(horasRaw) ? horasRaw : (typeof horasRaw === 'string' ? horasRaw.trim().split(/\\s+/) : []);\n          \n          horasArr.forEach(h => {\n            if (!h) return;\n            const parts = dateStr.split('-');\n            let ano, mes, dia;\n            if (parts[0].length === 4) { ano=Number(parts[0]); mes=Number(parts[1]); dia=Number(parts[2]); }\n            else { dia=Number(parts[0]); mes=Number(parts[1]); ano=Number(parts[2]); }\n\n            const hP = h.split(':');\n            const dtCompare = new Date(ano, mes-1, dia, Number(hP[0]||0), Number(hP[1]||0));\n            \n            if (dtCompare > agoraBRT) {\n              const dtUTC = new Date(Date.UTC(ano, mes-1, dia, 12, 0, 0));\n              const diaNome = diasSemana[dtUTC.getUTCDay()];\n              const labelDoc = ctx.doctor.sem_preferência ? ` (${docName})` : '';\n              const label = `${diaNome}, ${String(dia).padStart(2,'0')}/${String(mes).padStart(2,'0')} \\u00E0s ${h.substring(0,5)}${labelDoc}`;\n              list.push({ \n                label, \n                datetime: `${ano}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}T${h}`, \n                data_feegow: `${String(dia).padStart(2,'0')}-${String(mes).padStart(2,'0')}-${ano}`, \n                hora_inicio: h.substring(0,5),\n                local_id: Number(localKey),\n                doctor: docData\n              });\n            }\n          });\n        });\n      });\n    });\n  });\n  return list;\n}\n\nconst uniqueSlotsMap = {};\nallSlots.forEach(s => {\n  if (!uniqueSlotsMap[s.datetime]) {\n    uniqueSlotsMap[s.datetime] = s;\n  }\n});\nconst uniqueSlots = Object.values(uniqueSlotsMap);\nuniqueSlots.sort((a, b) => a.datetime.localeCompare(b.datetime));\n\nif (uniqueSlots.length === 0) {\n  return [{ json: { reply: `No momento não encontramos horários disponíveis para agendamento online.\\n\\nFale conosco: *${telefoneClinica}*\\n\\n0️⃣ *Voltar ao menu*`, state: 'MENU', context: {}, action: 'NONE', number: engine.number, instance: engine.instance } }];\n}\n\n// ==========================================\n// CONFIGURAÇÃO DO DOMÍNIO DO CALENDÁRIO\n// ==========================================\n// O código agora lê a variável 'baseUrlCalendar' definida no nó 'Config Clínica'.\n// Se não houver, usa localhost como fallback seguro.\nconst baseUrlCalendar = $node['Config Clínica'].json.baseUrlCalendar || \"http://localhost:5680\";\n\nconst calendarUrl = `${baseUrlCalendar}/webhook/whatsapp-clinica-calendario?s=${engine.number}`;\n\nconst reply = `📅 *Selecione o seu horário no calendário:*\n\nPor favor, clique no link abaixo para visualizar as datas e horários disponíveis e escolher o melhor momento para você:\n\n${calendarUrl}\n\n_Após escolher o horário, retorne a esta conversa para prosseguir com o agendamento._\n_Se desejar cancelar a escolha atual, digite *0* para voltar ao menu principal._`;\n\nreturn [{ json: { reply, state: 'WAIT_CALENDAR_SELECTION', context: { ...ctx, allSlots: uniqueSlots }, action: 'NONE', number: engine.number, instance: engine.instance } }];\n"
+      },
+      "id": "b10d83af-d6ba-41c6-9606-2193e8ab8d5a",
+      "name": "Smart Fetch Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5632,
+        41552
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node['Config Clínica'].json.feegowBaseUrl }}/appoints/new-appoint",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-access-token",
+              "value": "={{ $node['Config Clínica'].json.feegowToken }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "paciente_id",
+              "value": "={{ $json.patient_id }}"
+            },
+            {
+              "name": "profissional_id",
+              "value": "={{ $node['Master Engine'].json.context.doctor.profissionalId }}"
+            },
+            {
+              "name": "procedimento_id",
+              "value": "={{ $node['Master Engine'].json.context.doctor.procedimentoId }}"
+            },
+            {
+              "name": "local_id",
+              "value": "={{ $node['Master Engine'].json.context.selected_slot.local_id || $node['Master Engine'].json.context.doctor.localId || 1 }}"
+            },
+            {
+              "name": "data",
+              "value": "={{ $node['Master Engine'].json.context.selected_slot.data_feegow }}"
+            },
+            {
+              "name": "horario",
+              "value": "={{ $node['Master Engine'].json.context.selected_slot.hora_inicio + ':00' }}"
+            },
+            {
+              "name": "canal_id",
+              "value": "1"
+            },
+            {
+              "name": "plano",
+              "value": "={{ $json.plano }}"
+            },
+            {
+              "name": "convenio_id",
+              "value": "={{ $json.convenio_id }}"
+            },
+            {
+              "name": "valor",
+              "value": "={{ $json.valor }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "0436042f-14cd-4d06-be54-510f1d4ad560",
+      "name": "API Criar Evento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -5280,
+        41776
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst response = $input.item.json;\nconst engine  = $node['Master Engine'].json;\nconst ctx   = engine.context;\n\n// Feegow: { success: true, content: { agendamento_id: 43, ... } }\nconst ok = response.success === true || !!response.content?.agendamento_id;\n\nif (ok) {\n response._agendamento_ok = true;\n \n if (ctx.doctor && ctx.doctor.telefone) {\n  const slotData = ctx.selected_slot?.data || '';\n  const slotHora = ctx.selected_slot?.hora_inicio || '';\n  let dataHora = `${slotData} ${slotHora}`;\n  try {\n   const [ano, mes, dia] = slotData.split('-').map(Number);\n   const dt = new Date(ano, mes - 1, dia);\n   dataHora = dt.toLocaleDateString('pt-BR', {\n    weekday: 'long', day: '2-digit', month: '2-digit'\n   }) + ' às ' + slotHora;\n  } catch(e) {}\n\n  const agendamentoId = response.content?.agendamento_id || '';\n  const mensagem =\n   ` *Nova consulta agendada*\\n\\n` +\n   ` Médico: ${ctx.doctor.nome}\\n` +\n   ` Paciente: ${ctx.patient_name}\\n` +\n   ` Data: ${dataHora}\\n` +\n   ` Atendimento: ${ctx.payment === 'plano' ? `Plano ${ctx.plan}` : 'Particular'}\\n` +\n   (agendamentoId ? ` ID Feegow: #${agendamentoId}` : '');\n\n  response.notify_medico = {\n   telefone: ctx.doctor.telefone,\n   mensagem,\n   instance: engine.instance\n  };\n }\n} else {\n response._agendamento_ok = false;\n}\nreturn [{ json: response }];\n"
+      },
+      "id": "7c5dbd0e-c2a5-4b77-9978-ab6074524993",
+      "name": "Notificar Médico (Agendamento)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4976,
+        41760
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://evolution-api:8080/message/sendText/{{ $json.notify_medico.instance }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "SuaSenhaGlobalDaEvolution"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.notify_medico.telefone }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.notify_medico.mensagem }}"
+            },
+            {
+              "name": "delay",
+              "value": 1200
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "963cf1bb-15b7-4cc9-892d-68b83f72d4ad",
+      "name": "Enviar WhatsApp Médico (Agendamento)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -4752,
+        41760
+      ],
+      "disabled": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ $node['Config Clínica'].json.feegowBaseUrl }}/appoints/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "paciente_id",
+              "value": "={{ $json.patient_id }}"
+            },
+            {
+              "name": "data_start",
+              "value": "={{ $now.setZone('America/Sao_Paulo').toFormat('dd-MM-yyyy') }}"
+            },
+            {
+              "name": "data_end",
+              "value": "={{ $now.setZone('America/Sao_Paulo').plus({ days: 90 }).toFormat('dd-MM-yyyy') }}"
+            },
+            {
+              "name": "list_procedures",
+              "value": "0"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-access-token",
+              "value": "={{ $node['Config Clínica'].json.feegowToken }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "7dcde514-5437-4614-9695-eeaa22e20816",
+      "name": "API Buscar Eventos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -5648,
+        41344
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node['Config Clínica'].json.feegowBaseUrl }}/appoints/cancel-appoint",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-access-token",
+              "value": "={{ $node['Config Clínica'].json.feegowToken }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "agendamento_id",
+              "value": "={{ $node['Master Engine'].json.context.selected_event.agendamento_id }}"
+            },
+            {
+              "name": "motivo_id",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "18df58df-f08f-4751-b7d2-2e50a590fc59",
+      "name": "API Cancelar Evento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -5648,
+        41136
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst response = $input.item.json;\nconst engine  = $node['Master Engine'].json;\nconst ctx   = engine.context;\n\nconst ok = response.success === true || !!response.content;\n\nconst nomePaciente = ctx.cancel_name || ctx.view_name || ctx.patient_name ||\n           ctx.selected_event?.paciente || 'Desconhecido';\n\nif (ok && ctx.selected_event && ctx.doctor && ctx.doctor.telefone) {\n const data   = ctx.selected_event.data || '';\n const horaIni = ctx.selected_event.hora_inicio || '';\n const dataStr = data ? new Date(data + 'T12:00:00').toLocaleDateString('pt-BR', {\n  weekday: 'long', day: '2-digit', month: '2-digit'\n }) + ' às ' + horaIni : 'data não informada';\n\n const mensagem =\n  ` *Consulta cancelada*\\n\\n` +\n  ` Médico: ${ctx.doctor.nome}\\n` +\n  ` Paciente: ${nomePaciente}\\n` +\n  ` Data: ${dataStr}`;\n\n response.notify_medico = {\n  telefone: ctx.doctor.telefone,\n  mensagem,\n  instance: engine.instance\n };\n}\nreturn [{ json: response }];\n"
+      },
+      "id": "5dcb7bf4-459a-4ad2-8701-186a92021bfb",
+      "name": "Notificar Médico (Cancelamento)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5536,
+        40944
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://evolution-api:8080/message/sendText/{{ $json.notify_medico.instance }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "SuaSenhaGlobalDaEvolution"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.notify_medico.telefone }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.notify_medico.mensagem }}"
+            },
+            {
+              "name": "delay",
+              "value": 1200
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "37463d00-4078-46cf-a9bd-16e4e2d3e2d9",
+      "name": "Enviar WhatsApp Médico (Cancelamento)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -5392,
+        41136
+      ],
+      "disabled": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst apiResp = $input.item.json;\nconst engine = $node['Master Engine'].json;\nconst ctx   = engine.context || {};\n\n// Feegow: { success: 1 } em cancelamento bem-sucedido\nconst ok = apiResp.success === 1 || apiResp.success === true;\n\nlet reply  = '';\nlet state  = 'MENU';\nlet context = {};\n\nif (!ok) {\n reply = ' Não foi possível cancelar a consulta. Tente novamente mais tarde.\\n\\n0️⃣ *Voltar ao menu*';\n} else if (ctx.remarcar) {\n reply  = ' *Consulta cancelada com sucesso!* Agora vamos agendar uma nova.\\n\\n' +\n      'Como será o atendimento?\\n\\n1️⃣ *Particular*\\n2️⃣ *Plano de saúde*\\n\\n0️⃣ *Voltar ao menu*';\n state  = 'WAIT_PAYMENT';\n context = {\n  doctor:    ctx.doctor,\n  patient_name: ctx.cancel_name || ctx.patient_name,\n  for_self:   true,\n  remarcar:   false\n };\n} else {\n reply = ' *Consulta cancelada com sucesso!*\\n\\n0️⃣ *Voltar ao menu*';\n}\n\nreturn [{\n json: {\n  reply, state, context,\n  action: 'NONE',\n  number: engine.number,\n  instance: engine.instance\n }\n}];\n"
+      },
+      "id": "39001ca6-a7be-4d49-8fbe-cd865c682411",
+      "name": "Formatar Cancelamento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5280,
+        40944
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const engine = $node['Master Engine'].json;\nconst ctx = engine.context || {};\n\n// ==========================================\n// CONFIGURAÇÃO DO DOMÍNIO DO CALENDÁRIO\n// ==========================================\n// O código agora lê a variável 'baseUrlCalendar' definida no nó 'Config Clínica'.\n// Se não houver, usa localhost como fallback seguro.\nconst baseUrlCalendar = $node['Config Clínica'].json.baseUrlCalendar || \"http://localhost:5680\";\n\nconst calendarUrl = `${baseUrlCalendar}/webhook/whatsapp-clinica-calendario?s=${engine.number}`;\n\nconst reply = `📅 *Selecione o seu horário no calendário:*\n\nPor favor, clique no link abaixo para visualizar as datas e horários disponíveis e escolher o melhor momento para você:\n\n${calendarUrl}\n\n_Após escolher o horário, retorne a esta conversa para prosseguir com o agendamento._\n_Se desejar cancelar a escolha atual, digite *0* para voltar ao menu principal._`;\n\nreturn [{\n  json: {\n    reply,\n    state: 'WAIT_CALENDAR_SELECTION',\n    context: ctx,\n    action: 'NONE',\n    number: engine.number,\n    instance: engine.instance\n  }\n}];\n"
+      },
+      "id": "57addc26-452a-4e40-9e20-a7befa041b43",
+      "name": "Formatar Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5136,
+        41344
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const engine   = $node['Master Engine'].json;\nconst apiResp  = $input.item.json;\nconst ctx      = engine.context || {};\n\nconst isError = !apiResp.success || apiResp.success === 0 ||\n                (apiResp.statusCode && apiResp.statusCode >= 400);\n\n// Feegow: { success: 1, data: [ { id, data, hora_inicio, paciente: {...}, profissional: {...} } ] }\nconst items = Array.isArray(apiResp.data) ? apiResp.data : [];\n\n// Feegow já filtra por paciente_id — não precisa de normalização por nome\nconst agoraBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));\n\nconst eventosFuturos = items.filter(ev => {\n  if (!ev.data) return false;\n  const [ano, mes, dia] = ev.data.split('-').map(Number);\n  const horaInicio = (ev.hora_inicio || '00:00').split(':').map(Number);\n  const dt = new Date(ano, mes - 1, dia, horaInicio[0], horaInicio[1]);\n  return dt > agoraBRT;\n});\n\nlet reply   = '';\nlet state   = 'SELECT_EVENT';\nlet context = { ...ctx };\n\nif (isError || eventosFuturos.length === 0) {\n  reply = '📭 Não encontrei consultas futuras agendadas.\\n\\n0️⃣ *Voltar ao menu*';\n  state = 'MENU';\n  context = {};\n} else {\n  reply = '📋 *Consultas agendadas:*\\n\\n';\n  eventosFuturos.forEach((ev, i) => {\n    const [ano, mes, dia] = ev.data.split('-').map(Number);\n    const horaInicio = ev.hora_inicio || '';\n    const dt = new Date(ano, mes - 1, dia);\n    const dataStr = dt.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' });\n    const medNome = ev.profissional?.nome || ctx.doctor?.nome || '';\n    reply += `${i + 1}️⃣ ${dataStr} às ${horaInicio} — ${medNome}\\n`;\n  });\n\n  const modo = ctx.modo_listagem || (ctx.view_only ? 'ver' : 'cancelar');\n  if (modo === 'ver') {\n    reply += '\\n0️⃣ *Voltar ao menu*';\n    state = 'MENU';\n    context = {};\n  } else {\n    reply += '\\n0️⃣ *Voltar ao menu*\\n\\nDigite o número da consulta para ' +\n             (modo === 'remarcar' ? 'remarcar' : 'cancelar') + ':';\n  }\n\n  context.found_events = eventosFuturos.map(ev => ({\n    id: ev.id,\n    data: ev.data,\n    hora_inicio: ev.hora_inicio,\n    medico: ev.profissional?.nome || '',\n    paciente: ev.paciente?.nome || ctx.patient_name || ''\n  }));\n}\n\nreturn [{\n  json: {\n    reply, state, context,\n    action: 'NONE',\n    number: engine.number,\n    instance: engine.instance\n  }\n}];\n"
+      },
+      "id": "80d45862-4732-4b5f-a87c-b99e4edd9c11",
+      "name": "Formatar Eventos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5440,
+        41344
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst fromEngine = $node['Master Engine'].json;\nconst fromInput = $input.item.json;\n\n// Passthrough do Resolver Paciente (tem patient_id mas nao reply proprio)\n// Evita enviar mensagem duplicada \"verificando...\" para o usuario\nif (fromInput.patient_id !== undefined && fromInput._agendamento_ok === undefined) {\n return [];\n}\n\n// Saidas de Formatar Slots / Formatar Eventos / Formatar Cancelamento\n// ja trazem reply+state proprios  passa direto\nif (fromInput.reply && fromInput.state) {\n return [{ json: {\n  reply:  fromInput.reply,\n  state:  fromInput.state,\n  context: fromInput.context ?? fromEngine.context,\n  number:  fromInput.number || fromEngine.number,\n  instance: fromInput.instance || fromEngine.instance\n } }];\n}\n\n// Vindo de Notificar Medico (Agendamento)  _agendamento_ok definido\nconst isCreateSuccess = fromInput._agendamento_ok === true;\nconst isCreateFailure = fromInput._agendamento_ok === false ||\n            fromInput.error ||\n            (fromInput.statusCode && fromInput.statusCode >= 400);\n\nlet reply, state, context;\n\nif (isCreateSuccess) {\n const ctx = fromEngine.context || {};\n const slot = ctx.selected_slot || {};\n const dtRaw = slot.datetime || (slot.data ? slot.data + 'T' + (slot.hora_inicio || '00:00') : null);\n const dataHora = dtRaw\n  ? new Date(dtRaw).toLocaleString('pt-BR', {\n    timeZone: 'America/Sao_Paulo',\n    weekday: 'long', day: '2-digit', month: '2-digit',\n    hour: '2-digit', minute: '2-digit'\n   })\n  : slot.label || 'data confirmada';\n\n const agId = fromInput.content?.agendamento_id || '';\n reply = `*Consulta agendada com sucesso!* \\n\\n` +\n  `*M\\u00E9dico:* ${ctx.doctor?.nome || ''}\\n` +\n  `*Data:* ${dataHora}\\n` +\n  `*Paciente:* ${ctx.patient_name || ''}\\n` +\n  `*Atendimento:* ${ctx.payment === 'plano' ? 'Plano \\u2014 ' + (ctx.plan || '') : 'Particular'}\\n\\n` +\n  `_Chegue 10 minutos antes._\\n` +\n  (agId ? `ID Feegow: #${agId}\\n` : '') +\n  `0\\uFE0F\\u20E3 *Voltar ao menu*`;\n state  = 'BOOKING_DONE';\n context = {};\n} else if (isCreateFailure) {\n reply  = `*N\\u00E3o foi poss\\u00EDvel agendar a consulta.* Tente novamente ou ligue para a cl\\u00EDnica.\\n\\n0\\uFE0F\\u20E3 *Voltar ao menu*`;\n state  = 'MENU';\n context = {};\n} else {\n // Fallback  usa o reply/state do engine\n reply  = fromEngine.reply  || '';\n state  = fromEngine.state  || 'MENU';\n context = fromEngine.context || {};\n}\n\nreturn [{ json: {\n reply,\n state,\n context,\n number:  fromEngine.number  || fromInput.number,\n instance: fromEngine.instance || fromInput.instance\n} }];\n"
+      },
+      "id": "5179c9ea-c5c7-4030-b04d-d1dedbf9e8f3",
+      "name": "Merge Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5232,
+        42048
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO user_states (phone, state, context, updated_at)\nVALUES ('{{ $json.number }}', '{{ $json.state }}', '{{ JSON.stringify($json.context) }}'::jsonb, NOW())\nON CONFLICT (phone) DO UPDATE\n SET state = EXCLUDED.state,\n   context = EXCLUDED.context,\n   updated_at = NOW()",
+        "options": {}
+      },
+      "id": "d343fe91-20dd-403d-98d4-daaf9ab9cc58",
+      "name": "Salvar Estado",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [
+        -4912,
+        41520
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "r1y1J2gyb8fLwkVR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://evolution-api:8080/message/sendText/{{ $json.instance || 'kore' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "SuaSenhaGlobalDaEvolution"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.number }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.reply }}"
+            },
+            {
+              "name": "delay",
+              "value": 1200
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "7b032d91-dc70-449c-a1a4-e1be7c67c049",
+      "name": "Enviar WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -4848,
+        41936
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO processed_messages (message_id, created_at)\nVALUES ('{{ $json.message_id }}', NOW())\nON CONFLICT (message_id) DO NOTHING\nRETURNING message_id",
+        "options": {}
+      },
+      "id": "cbf35a44-2f09-4549-90f0-d88bfd67a155",
+      "name": "Dedup Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [
+        -6416,
+        41936
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "r1y1J2gyb8fLwkVR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "7fc13a8e-8005-4a6b-b5d9-84bb9e27f0c3",
+      "name": "Diariamente às 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -7008,
+        41136
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst item = $input.item.json;\nconst token = item.feegowToken || \"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJmZWVnb3ciLCJhdWQiOiJwdWJsaWNhcGkiLCJpYXQiOjE3NTA5NDE4NTQsImxpY2Vuc2VJRCI6Nzk3N30.sDJdqWVAAx9eK2zC33ROygjdQR520mM-YL2aAuL7Xag\";\nconst baseUrl = item.feegowBaseUrl || \"https://api.feegow.com/v1/api\";\n\n// VERIFICAÇÃO DE SEGURANÇA: Se não tiver médico selecionado, para por aqui\nif (!item.doctor || !item.doctor.profissionalId) {\n return [{ json: { ...item, error: 'Nenhum médico selecionado ou dados ausentes' } }];\n}\n\nconst profId = item.doctor.profissionalId;\n\ntry {\n const procRes = await this.helpers.request({ \n  method:'GET', \n  url:`${baseUrl}/procedures/list?profissional_id=${profId}`, \n  headers:{'x-access-token':token}, \n  json:true \n });\n\n const procedures = procRes.content || [];\n let mainProc = procedures.find(x => x.nome.toLowerCase().includes('consulta') && !x.nome.toLowerCase().includes('retorno')) || procedures[0];\n\n return [{ json: { \n  ...item, \n  doctor: { \n   ...item.doctor, \n   procedimentoId: mainProc?.procedimento_id || item.doctor.procedimentoId, \n   valorParticular: mainProc?.valor ? (mainProc.valor / 100) : (item.doctor.valorParticular || 0)\n  } \n } }];\n} catch (e) {\n return [{ json: { ...item, error: 'Falha ao buscar preço: ' + e.message } }];\n}\n"
+      },
+      "id": "a7ed8963-ab0b-42ec-90b2-60561664f9c3",
+      "name": "Preparar Parâmetros",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6848,
+        41136
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $node['Config Clínica'].json.feegowBaseUrl }}/appoints/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "data_start",
+              "value": "={{ $node['Preparar Parâmetros'].json.dataAmanhaFeegow }}"
+            },
+            {
+              "name": "data_end",
+              "value": "={{ $node['Preparar Parâmetros'].json.dataAmanhaFeegow }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-access-token",
+              "value": "={{ $node['Config Clínica'].json.feegowToken }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "9fab6d61-f407-4002-b2b2-751d1e4c74fd",
+      "name": "Buscar Eventos de Amanhã",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -6688,
+        41136
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst agendamentos = [];\nconst apiResp = $input.item.json;\nconst lista = Array.isArray(apiResp.content) ? apiResp.content : [];\n\nfor (const ag of lista) {\n const celular = (ag.paciente_celular || ag.paciente?.celular || '').replace(/\\D/g, '');\n if (!celular || celular.length < 8) continue;\n\n const horaIni = ag.horario || '00:00';\n const data_ag = ag.data || ''; // DD-MM-YYYY\n \n let dataHoraStr = '';\n try {\n  const p = data_ag.split('-').map(Number);\n  const dt = new Date(p[2], p[1]-1, p[0]);\n  dataHoraStr = dt.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' }) + ' às ' + horaIni.substring(0,5);\n } catch(e) { dataHoraStr = `${data_ag} ${horaIni}`; }\n\n agendamentos.push({ json: {\n  telefone: celular.startsWith('55') ? celular : '55' + celular,\n  nomePaciente: ag.paciente_nome || 'Paciente',\n  dataHora: dataHoraStr,\n  medico: ag.profissional_nome || '',\n  agendamento_id: ag.agendamento_id\n }});\n}\nreturn agendamentos;\n"
+      },
+      "id": "0343eb33-e7c6-4008-95ac-3d2487ee3070",
+      "name": "Extrair Pacientes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6528,
+        41136
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://evolution-api:8080/message/sendText/{{ $json.instance || 'kore' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "SuaSenhaGlobalDaEvolution"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.telefone }}"
+            },
+            {
+              "name": "text",
+              "value": "=Olá, *{{ $json.nomePaciente }}*! \n\nLembramos que você tem uma consulta agendada para *{{ $json.dataHora }}*.\nPedimos que confirme sua presença respondendo *1* (sim) ou *0* (menu).\n\nAtenciosamente,\n{{ $node['Config Clínica'].json.nomeClinica || 'Clínica' }}"
+            },
+            {
+              "name": "delay",
+              "value": 1200
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "3cf02ec5-5dc8-4ea8-a8cd-7b01073ca239",
+      "name": "Enviar Lembrete WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -6368,
+        41136
+      ]
+    },
+    {
+      "parameters": {
+        "content": "##  Configuração Geral\n**Antes de ativar, verifique:**\n-  Credencial **Postgres** configurada\n-  **Evolution API** rodando\n-  **Token Feegow** preenchido em Config Clínica\n-  IDs preenchidos (use o Webhook Utilitário IDs)\n-  Instância WhatsApp ativa\n\n**Três flows neste arquivo:**\n→ Flow principal (Webhook)\n→ Flow de lembrete diário (Schedule 08:00)\n→ Utilitário IDs Feegow (use uma vez para setup)",
+        "height": 280,
+        "width": 440,
+        "color": 4
+      },
+      "id": "fd8ab00b-327d-4959-8602-c2fd2796cd0b",
+      "name": " Visão Geral",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -7632,
+        41552
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ⚙️ Configure aqui os médicos\n**Único lugar para alterar médicos.**\nCampos obrigatórios por médico:\n- `nome`, `especialidade`, `telefone`\n- `profissionalId` → GET /v1/api/professional/list\n- `localId` → GET /v1/api/company/locals\n- `procedimentoId` → GET /v1/api/procedures\n- `convenios` → mapa nome:id (GET /v1/api/insurance/list)\n- `planos` [], `idadeMin`, `idadeMax`, `valorParticular`\n\n Horários e duração são controlados pelo Feegow.\nNão é mais necessário configurar `inicio`, `fim`, `dias`.",
+        "height": 290,
+        "width": 380,
+        "color": 3
+      },
+      "id": "b52ef577-ec1b-4a89-a7a6-b07a9f59c6a3",
+      "name": "⚙️ Config Médicos",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -7040,
+        42096
+      ]
+    },
+    {
+      "parameters": {
+        "content": "##  Webhook\nCopie a URL gerada e configure na **Evolution API**\ncomo destino dos eventos `messages.upsert`.\n\nTeste com o campo `test: true` no body:\n```json\n{ \"test\": true, \"text\": \"oi\", \"number\": \"5524...\" }\n```",
+        "height": 230,
+        "width": 340,
+        "color": 5
+      },
+      "id": "d01efd13-0325-4442-86c2-446d1144a394",
+      "name": " Webhook",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -7520,
+        42128
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ️ Banco de dados\nConfigure a credencial **Postgres** nos nós:\n- `Get State`\n- `Salvar Estado`\n- `Dedup Postgres`\n\nTabela necessária:\n```sql\nCREATE TABLE user_states (\n phone TEXT PRIMARY KEY,\n state TEXT,\n context JSONB,\n updated_at TIMESTAMPTZ DEFAULT now()\n);\n```",
+        "height": 270,
+        "width": 360,
+        "color": 4
+      },
+      "id": "b3331d5f-1925-4117-ba5d-386c72bfb110",
+      "name": "️ Postgres",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -6432,
+        42096
+      ]
+    },
+    {
+      "parameters": {
+        "content": "##  Evolution API\nNos nós de envio, ajuste:\n- **apikey**: troque `SuaSenhaGlobalDaEvolution`\n- **instância**: padrão `kore`, muda via `$json.instance`\n\nNós afetados:\n- `Enviar WhatsApp`\n- `Enviar WhatsApp Médico (Agendamento)`\n- `Enviar WhatsApp Médico (Cancelamento)`\n- `Enviar Aviso Verificação`\n- `Enviar Lembrete WhatsApp`",
+        "height": 280,
+        "width": 360,
+        "color": 2
+      },
+      "id": "115dcf03-5908-4bce-86ea-b27ff731012e",
+      "name": " Evolution API",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -4864,
+        42096
+      ]
+    },
+    {
+      "parameters": {
+        "content": "##  Feegow API\nNós que usam a API Feegow:\n- `API Buscar Horários`\n- `Resolver Paciente`\n- `API Criar Evento`\n- `API Buscar Eventos`\n- `API Cancelar Evento`\n- `Buscar Eventos de Amanhã`\n\nConfiguração centralizada em **Config Clínica**:\n- `feegowToken`: seu token de acesso\n- `feegowBaseUrl`: https://api.feegow.com/v1/api\n- Header: `x-access-token`",
+        "height": 270,
+        "width": 360,
+        "color": 5
+      },
+      "id": "0bc5eb41-cf3a-48d8-817a-467d3c09175b",
+      "name": " Feegow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -5664,
+        42096
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ⏰ Lembrete Diário (08:00)\nDispara todo dia às 08h e envia WhatsApp\npara pacientes com consulta no dia seguinte.\n\n**Configuração necessária:**\n- Médicos em `Config Clínica` (calendarIds puxados automaticamente)\n- `apikey` da Evolution no nó `Enviar Lembrete WhatsApp`\n\n Só funciona para consultas agendadas\n**após** esta versão do bot (o telefone precisa\nestar salvo na descrição do evento no Google Calendar).",
+        "height": 260,
+        "width": 860,
+        "color": 3
+      },
+      "id": "9c8ebbe6-1c0e-435c-af86-51a5f93833b6",
+      "name": "⏰ Flow Lembrete",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -6736,
+        40816
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO user_states (phone, state, context, updated_at)\nVALUES ('{{ $json.telefone }}', 'AWAITING_REMINDER_CONFIRM', '{\"dataHora\": \"{{ $json.dataHora }}\", \"nomePaciente\": \"{{ $json.nomePaciente }}\", \"medico\": \"{{ $json.medico }}\"}'::jsonb, NOW())\nON CONFLICT (phone) DO UPDATE\n SET state = EXCLUDED.state,\n   context = EXCLUDED.context,\n   updated_at = NOW()",
+        "options": {}
+      },
+      "id": "906b6913-3caf-4423-81f1-93fab137bea4",
+      "name": "Salvar Estado Lembrete",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -6128,
+        41136
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "r1y1J2gyb8fLwkVR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst raw = $input.item.json;\nconst data = raw.data || raw.body?.data || raw;\nconst fromMe = data.key?.fromMe || raw.fromMe || false;\n\nif (!fromMe) return [];\n\nconst pausaMinutos = $node['Config Clínica']?.json?.pausaMinutos || 5;\nconst number = (data.key?.remoteJid || raw.remoteJid || '').replace(/@.*$/, '');\n\nreturn [{ json: { number, pausaMinutos, detectado: true } }];\n"
+      },
+      "id": "1868dba4-2368-4c33-8428-862c305d8cb4",
+      "name": "Detectar Humano",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6896,
+        42400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO user_states (phone, state, context, bot_paused_until, updated_at)\nVALUES (\n '{{ $json.number }}',\n COALESCE((SELECT state FROM user_states WHERE phone = '{{ $json.number }}'), 'IDLE'),\n COALESCE((SELECT context FROM user_states WHERE phone = '{{ $json.number }}'), '{}'::jsonb),\n NOW() + INTERVAL '{{ $json.pausaMinutos }} minutes',\n NOW()\n)\nON CONFLICT (phone) DO UPDATE\n SET bot_paused_until = NOW() + ({{ $json.pausaMinutos }} || ' minutes')::interval,\n   updated_at = NOW();",
+        "options": {}
+      },
+      "id": "04edbb36-0742-435f-98ea-8b0fe0b85fda",
+      "name": "Pausar Bot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [
+        -6752,
+        42128
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "r1y1J2gyb8fLwkVR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-pausa",
+              "leftValue": "={{ $json.bot_paused_until !== null && new Date($json.bot_paused_until) > new Date() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a6fdce24-dfd0-4012-b79d-67a41e5f448c",
+      "name": "Verificar Pausa",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -6112,
+        41936
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.item.json;\nconst ctx = item.context || {};\nconst phone = (item.number || '').replace(/\\D/g, '').slice(-11);\nconst baseUrl = $node['Config Clínica'].json.feegowBaseUrl;\nconst token  = $node['Config Clínica'].json.feegowToken;\nconst headers = { 'x-access-token': token };\n\n// Calcular parâmetros de agendamento (plano, convenio_id, valor)\nconst isPlano = ctx.payment === 'plano';\nlet planoVal = 0;\nlet convenioIdVal = 0;\nlet valorVal = 0;\n\nif (isPlano && ctx.plan && ctx.doctor) {\n  planoVal = 1;\n  const pNorm = ctx.plan.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\n  const pMatch = (ctx.doctor.planos || []).find(p => (p.nome || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').includes(pNorm));\n  if (pMatch) {\n    convenioIdVal = pMatch.id;\n  }\n} else if (ctx.doctor && ctx.doctor.valorParticular) {\n  valorVal = ctx.doctor.valorParticular;\n}\n\n// Helper para formatar a saída com os campos\nfunction formatOutput(pid) {\n  return {\n    ...item,\n    patient_id: pid,\n    plano: planoVal,\n    convenio_id: convenioIdVal,\n    valor: valorVal,\n    context: {\n      ...ctx,\n      patient_id: pid\n    }\n  };\n}\n\n// CACHE: Se já temos o ID no contexto, pula a API\nif (ctx.patient_id) {\n  return [{ json: formatOutput(ctx.patient_id) }];\n}\n\nif (!phone) {\n return [{ json: { ...item, _abort: 'true', error: 'Número ausente' } }];\n}\n\n// Função para comparar nomes de forma flexível e robusta\nfunction nameMatch(n1, n2) {\n  const clean = s => (s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]/g, '');\n  const c1 = clean(n1);\n  const c2 = clean(n2);\n  return c1 && c2 && (c1.includes(c2) || c2.includes(c1));\n}\n\ntry {\n const res = await this.helpers.request({\n  method: 'GET',\n  url: `${baseUrl}/patient/list?telefone=${phone}`,\n  headers,\n  json: true\n });\n\n const pacientes = res.content || [];\n const targetName = ctx.patient_name || ctx.view_name || ctx.cancel_name;\n \n if (pacientes.length > 0) {\n  // Tenta encontrar o paciente pelo nome correspondente\n  const matched = pacientes.find(p => nameMatch(targetName, p.nome));\n  if (matched) {\n    const pid = matched.paciente_id;\n    return [{ json: formatOutput(pid) }];\n  }\n }\n\n // Não achou paciente correspondente (ou lista vazia) — cria com nome_completo e celular1\n const createRes = await this.helpers.request({\n  method: 'POST',\n  url: `${baseUrl}/patient/create`,\n  headers,\n  body: {\n   nome_completo: targetName || 'Paciente WhatsApp',\n   celular1: phone,\n   cpf: ctx.patient_cpf || '',\n   unidade_id: ctx.doctor?.localId || 1\n  },\n  json: true\n });\n\n const pid = createRes.content?.paciente_id || createRes.content?.id || null;\n return [{ json: formatOutput(pid) }];\n} catch (e) {\n return [{ json: { ...item, _abort: 'true', error: e.message } }];\n}\n"
+      },
+      "id": "dbe52e29-c80a-49ab-9f72-804b0fe57e40",
+      "name": "Resolver Paciente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5488,
+        41776
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "r0",
+                    "leftValue": "={{ $json._abort }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "r1",
+                    "leftValue": "={{ $node['Master Engine'].json.action }}",
+                    "rightValue": "LIST_EVENTS",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "5cfa5661-0a4d-42e7-a49e-934b43fcb254",
+      "name": "Rotear Após Paciente",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -5344,
+        41776
+      ]
+    },
+    {
+      "parameters": {
+        "path": "feegow-ids",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "488031dc-0801-4dc2-9a15-43ddb46c9941",
+      "name": "Webhook Utilitário IDs",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -7296,
+        40752
+      ],
+      "webhookId": "feegow-util-ids-clinica"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT medicos FROM cache_clinica WHERE chave = 'medicos_data' LIMIT 1;",
+        "options": {}
+      },
+      "id": "get-cache-ids-pg",
+      "name": "Get Cache for UI",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [
+        -7264,
+        40544
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "r1y1J2gyb8fLwkVR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst cache = $node[\"Get Cache for UI\"].json.medicos || [];\nconst medicosFull = Array.isArray(cache) ? cache : [];\n\nconst html = `\n<html><head><style>\n body{font-family:sans-serif;margin:30px;background:#f4f7f6;color:#333}\n h1{color:#1a5276;text-align:center}\n table{width:100%;border-collapse:collapse;margin-top:20px;background:white;box-shadow:0 2px 5px rgba(0,0,0,0.1)}\n th{background:#2e86c1;color:white;padding:12px;text-align:left;font-size:14px}\n td{padding:10px;border-bottom:1px solid #ddd;font-size:13px}\n tr:hover{background:#f1f1f1}\n .price{font-weight:bold;color:#27ae60}\n .tag{background:#ebf5fb;color:#2980b9;padding:2px 6px;border-radius:4px;font-size:11px;margin-right:4px;display:inline-block;margin-bottom:4px}\n</style></head>\n<body>\n <h1> Super Scanner Feegow  Mapeamento Completo</h1>\n <p style='text-align:center;color:#666'>Dados carregados do cache (atualizado via Scanner)</p>\n <table>\n  <tr><th>ID</th><th>Médico</th><th>Procedimento</th><th>Valor (Part.)</th><th>Planos</th></tr>\n  ${medicosFull.map(m => `\n   <tr>\n    <td>${m.profissionalId}</td>\n    <td><b>${m.nome}</b><br/><small>${m.especialidade || ''}</small></td>\n    <td>${(m.procedimentos || []).map(p => p.tipo).join('<br/>')}</td>\n    <td class='price'>${m.valorParticular ? 'R$ '+Number(m.valorParticular).toFixed(2) : '---'}</td>\n    <td>${(m.planos || []).map(p => `<span class='tag'>${p.nome}</span>`).join('')}</td>\n   </tr>\n  `).join('')}\n </table>\n</body></html>`;\n\nreturn [{ json: { html } }];\n"
+      },
+      "id": "edda9d5f-a4d2-41a6-b9c9-88765379d769",
+      "name": "Buscar IDs Feegow",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -7104,
+        40544
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "241b01e4-5b10-4e5e-9418-f6dde25bd9ee",
+      "name": "Responder IDs HTML",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -6976,
+        40752
+      ]
+    },
+    {
+      "parameters": {
+        "content": "##  Utilitário: Buscar IDs Feegow\nUse **uma vez** após ter o token para descobrir\nos IDs a preencher no Config Clínica.\n\n**Como usar:**\nAcesse no browser:\n`GET /webhook/feegow-ids?token=SEU_TOKEN`\n\nRetorna página HTML com tabelas de:\n- profissionalId por médico\n- localId por sala/unidade\n- procedimentoId por tipo de consulta\n- convenioId por plano de saúde",
+        "height": 260,
+        "width": 380,
+        "color": 3
+      },
+      "id": "8ae24228-48cd-488e-897d-68554142049a",
+      "name": " Utilitário IDs",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -7264,
+        40448
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "manual-trigger-scanner",
+      "name": "Sincronizar Manualmente",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -8352,
+        41650
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "feegowToken",
+              "value": "={{$node[\"Config Clínica\"].json[\"feegowToken\"]}}"
+            },
+            {
+              "name": "feegowBaseUrl",
+              "value": "={{$node[\"Config Clínica\"].json[\"feegowBaseUrl\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-scanner-set",
+      "name": "Config para Scanner",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        -8200,
+        41650
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "/** \n * SCANNER LOGIC v6\n * Timeouts estendidos para 60s (Feegow está lenta)\n */\n\n// 1. Configurações\nconst FEEGOW_TOKEN = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJmZWVnb3ciLCJhdWQiOiJwdWJsaWNhcGkiLCJpYXQiOjE3NTA5NDE4NTQsImxpY2Vuc2VJRCI6Nzk3N30.sDJdqWVAAx9eK2zC33ROygjdQR520mM-YL2aAuL7Xag';\nconst FEEGOW_BASE_URL = 'https://api.feegow.com/v1/api';\n\nlet config = {};\ntry {\n  config = $input.first()?.json || {};\n  if (!config.feegowToken) {\n    config = $node['Config Clínica']?.json || { feegowToken: FEEGOW_TOKEN, feegowBaseUrl: FEEGOW_BASE_URL };\n  }\n} catch(e) { \n  config = { feegowToken: FEEGOW_TOKEN, feegowBaseUrl: FEEGOW_BASE_URL };\n}\n\nconst token = config.feegowToken || FEEGOW_TOKEN;\nconst baseUrl = config.feegowBaseUrl || FEEGOW_BASE_URL;\nconst headers = { 'x-access-token': token };\n\nconsole.log('Iniciando Scanner Feegow (v6)...');\n\nconst fetchWithRetry = async (url, retries = 3) => {\n  for (let i = 0; i < retries; i++) {\n    try {\n      if (i > 0) await new Promise(r => setTimeout(r, 1500 * i));\n      const res = await this.helpers.request({ method: 'GET', url, headers, json: true, timeout: 300000 });\n      if (res && res.success === false) {\n        if (i < retries - 1) continue;\n        return [];\n      }\n      return Array.isArray(res.content) ? res.content : [];\n    } catch (e) {\n      if (i === retries - 1) throw e;\n    }\n  }\n  return [];\n};\n\n// 1. Busca Profissionais e Locais em paralelo (Timeout 60s)\nconst [profRes, localRes] = await Promise.all([\n  this.helpers.request({ method:'GET', url:`${baseUrl}/professional/list?ativo=1`, headers, json:true, timeout: 300000 }),\n  this.helpers.request({ method:'GET', url:`${baseUrl}/company/list-local`, headers, json:true, timeout: 300000 })\n]);\n\nconst profs = profRes.content || [];\nconst locals = localRes.content || [];\nconst defaultLocalId = locals.length > 0 ? locals[0].id : 1;\n\nconst medicosFinal = [];\n\nfor (const prof of profs) {\n  try {\n    const pId = prof.profissional_id;\n    const drFirstName = prof.nome.toLowerCase().split(' ')[0];\n    const drEspec = (prof.especialidades?.[0]?.nome_especialidade || (prof.conselho === 'CRP' ? 'Psicologia' : 'Psiquiatria')).toLowerCase();\n    \n    console.log(`>>> Sincronizando médico: ${prof.nome} (${drEspec})`);\n    \n    // 1. Busca Planos (Com Retry para estabilidade)\n    await new Promise(r => setTimeout(r, 800)); \n    let planos = [];\n    try {\n      const rawPlanos = await fetchWithRetry(`${baseUrl}/professional/insurance?profissional_id=${pId}`);\n      planos = rawPlanos.map(i => ({ id: i.convenio_id, nome: i.nome }));\n    } catch (e) {\n      throw new Error(`Falha ao carregar planos: ${e.message}`);\n    }\n\n    // 2. Busca Procedimentos (Com Retry)\n    await new Promise(r => setTimeout(r, 800));\n    let procsRaw = [];\n    try {\n      procsRaw = await fetchWithRetry(`${baseUrl}/procedures/list?profissional_id=${pId}`);\n    } catch (e) {\n      throw new Error(`Falha ao carregar procedimentos: ${e.message}`);\n    }\n\n    const procedimentosProcessados = procsRaw\n      .filter(p => { \n         const n = p.nome.toLowerCase(); \n         const isForbidden = n.includes('online') || n.includes('on-line') || n.includes('tele') || n.includes('cortesia') || n.includes('receita') || n.includes('retorno');\n         if (isForbidden) return false;\n\n         if (drEspec.includes('psiquiatr')) {\n           if (n.includes('psicolo') || n.includes('psicolog')) return false;\n         }\n         if (drEspec.includes('psicolo')) {\n           if (n.includes('psiquiatr')) return false;\n         }\n\n         const otherDrs = profs.filter(o => o.profissional_id !== pId).map(o => o.nome.toLowerCase().split(' ')[0]);\n         const hasOtherName = otherDrs.some(name => name.length > 2 && new RegExp('\\\\b' + name + '\\\\b', 'i').test(n));\n         const hasMyName = new RegExp('\\\\b' + drFirstName + '\\\\b', 'i').test(n);\n\n         if (hasOtherName && !hasMyName) return false;\n         return true;\n      })\n      .map(p => {\n        const rawValor = p.valor || 0;\n        let tipo = p.nome.includes(':') ? p.nome.split(':').pop().trim() : p.nome.trim();\n        if (tipo.toLowerCase().includes('primeira')) {\n           tipo = 'Primeira Consulta';\n        } else {\n           tipo = 'Consulta';\n        }\n        return {\n          tipo,\n          procedimentoId: p.procedimento_id,\n          valorParticular: rawValor > 1000 ? Math.round(rawValor)/100 : rawValor\n        };\n      });\n\n    const procedimentosUnicos = [];\n    const seenNames = new Set();\n    for (const p of procedimentosProcessados) {\n      if (!seenNames.has(p.tipo)) {\n        seenNames.add(p.tipo);\n        procedimentosUnicos.push(p);\n      }\n    }\n    const procedimentos = procedimentosUnicos.sort((a,b) => a.tipo.localeCompare(b.tipo));\n\n    if (procedimentos.length > 0) {\n      medicosFinal.push({\n        nome: prof.nome,\n        especialidade: prof.especialidades?.[0]?.nome_especialidade || (prof.conselho === 'CRP' ? 'Psicologia' : 'Psiquiatria'),\n        crm: `${prof.conselho} ${prof.conselho_numero || ''}`,\n        profissionalId: pId,\n        localId: defaultLocalId,\n        procedimentoId: procedimentos[0].procedimentoId,\n        valorParticular: procedimentos[0].valorParticular,\n        planos: planos,\n        procedimentos: procedimentos,\n        idadeMin: 0,\n        idadeMax: 150,\n        unidadeId: locals.find(l => l.id === defaultLocalId)?.unidade_id || 1\n      });\n      console.log(`   OK: ${procedimentos.length} procedimentos | ${planos.length} planos.`);\n    }\n  } catch (e) {\n    console.error(`   ERRO em ${prof.nome}:`, e.message);\n    throw new Error(`Falha ao sincronizar ${prof.nome}. Abortando o Scanner inteiro para proteger o cache antigo. Detalhe: ${e.message}`);\n  }\n}\n\nconsole.log(`Sincronização concluída: ${medicosFinal.length} médicos mapeados.`);\nif (medicosFinal.length === 0) {\n  throw new Error('Sincronização resultou em 0 médicos. Abortando para não sobreescrever o cache atual com dados vazios.');\n}\nreturn [{ json: { medicos: medicosFinal, total: medicosFinal.length, updated_at: new Date() } }];"
+      },
+      "id": "9db931d7-1cb1-4740-a120-db35c81de3bc",
+      "name": "Scanner Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -8144,
+        41488
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "00890c5e-8bad-4045-a2c8-c798ceb001e1",
+      "name": "Atualizar Cache (1h)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        -8352,
+        41488
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO cache_clinica (chave, medicos, updated_at) \nVALUES ('medicos_data', '{{ JSON.stringify($json.medicos) }}', NOW()) \nON CONFLICT (chave) DO UPDATE SET medicos = EXCLUDED.medicos, updated_at = NOW();",
+        "options": {}
+      },
+      "id": "594ff021-f216-4b4f-9260-b79c2918c7b6",
+      "name": "Salvar no Banco",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [
+        -7952,
+        41488
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "r1y1J2gyb8fLwkVR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT medicos FROM cache_clinica WHERE chave = 'medicos_data' LIMIT 1;",
+        "options": {}
+      },
+      "id": "bddbbf39-8bba-4d90-b597-2e0c4c56bd2a",
+      "name": "Get Cache",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [
+        -7456,
+        41936
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "r1y1J2gyb8fLwkVR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "whatsapp-clinica-calendario",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "cal-hook-1",
+      "name": "Webhook Calendario",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -7200,
+        43000
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "whatsapp-clinica-api-horarios",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "cal-api-h-1",
+      "name": "Webhook API Horarios",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -7200,
+        43200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT context FROM user_states WHERE phone = '{{ $json.query.s }}'",
+        "options": {}
+      },
+      "id": "cal-api-h-2",
+      "name": "Get State para Horarios",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [
+        -6900,
+        43200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "r1y1J2gyb8fLwkVR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const session = $node['Webhook API Horarios'].json.query.s;\nconst stateNode = $json;\n\nif (!stateNode || !stateNode.context) {\n  return [{ json: { error: 'Sessão inválida ou expirada.', slots: [] } }];\n}\n\nconst ctx = typeof stateNode.context === 'string' ? JSON.parse(stateNode.context) : stateNode.context;\n\nconst baseUrl = $node['Config Clínica'].json.feegowBaseUrl;\nconst token = $node['Config Clínica'].json.feegowToken;\nconst headers = { 'x-access-token': token, 'Content-Type': 'application/json' };\n\nfunction formatDateBR(date) {\n  const d = String(date.getDate()).padStart(2,'0');\n  const m = String(date.getMonth()+1).padStart(2,'0');\n  const y = date.getFullYear();\n  return `${d}-${m}-${y}`;\n}\n\nasync function fetchSlotsOnce(url) {\n  const r = await this.helpers.request({ method:'GET', url, headers, json:true, timeout: 300000 });\n  if (r && r.success === false) {\n    throw new Error('API success=false');\n  }\n  return r.content?.profissional_id || r.content || {};\n}\n\nasync function fetchSlots(days) {\n  const now = new Date();\n  const data_start = formatDateBR(now);\n  const future = new Date();\n  future.setDate(future.getDate() + days);\n  const data_end = formatDateBR(future);\n\n  function buildUrl(doctor) {\n    let url = `${baseUrl}/appoints/available-schedule?tipo=P&procedimento_id=${doctor.procedimentoId}&profissional_id=${doctor.profissionalId}&unidade_id=0&data_start=${data_start}&data_end=${data_end}`;\n    if (ctx.payment === 'plano' && ctx.plan) {\n      const pNorm = ctx.plan.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\n      const pMatch = (doctor.planos || []).find(p => (p.nome || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').includes(pNorm));\n      if (pMatch) url += `&convenio_id=${pMatch.id}`;\n    }\n    return url;\n  }\n\n  const doctorsToFetch = ctx.doctor?.sem_preferência ? (ctx.eligible_doctors || []) : [ctx.doctor];\n  const promises = doctorsToFetch.map(async (doc) => {\n    if (!doc || !doc.profissionalId) return { doc, result: null };\n    const url = buildUrl(doc);\n    try {\n      const result = await fetchSlotsOnce.call(this, url);\n      return { doc, result };\n    } catch(e) {\n      return { doc, result: null };\n    }\n  });\n\n  const results = await Promise.all(promises);\n  const mergedMap = {};\n  results.forEach(({ doc, result }) => {\n    if (result && typeof result === 'object') {\n      Object.entries(result).forEach(([profId, profVal]) => {\n        mergedMap[profId] = {\n          ...profVal,\n          doctorName: doc.nome,\n          doctorData: doc\n        };\n      });\n    }\n  });\n  return mergedMap;\n}\n\nconst profMap = await fetchSlots(30);\n\nif (Object.keys(profMap).length === 0) {\n  return [{ json: { slots: [], doctorName: ctx.doctor?.nome || '' } }];\n}\n\nfunction processMap(map) {\n  const list = [];\n  const diasSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'S\\u00E1b'];\n  const forbiddenLocals = [\"4\", \"12\"];\n  const agoraBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));\n  \n  Object.entries(map).forEach(([profId, prof]) => {\n    const docData = prof.doctorData || null;\n    const locals = Array.isArray(prof?.local_id) ? prof.local_id : (prof?.local_id ? [prof.local_id] : []);\n    locals.forEach(loc => {\n      if (!loc) return;\n      Object.entries(loc).forEach(([localKey, val]) => {\n        if (localKey === 'age_restriction') return;\n        if (forbiddenLocals.includes(String(localKey))) return;\n\n        const target = (val && typeof val === 'object' && !Array.isArray(val)) ? val : { [localKey]: val };\n        Object.entries(target).forEach(([dateStr, horasRaw]) => {\n          const horasArr = Array.isArray(horasRaw) ? horasRaw : (typeof horasRaw === 'string' ? horasRaw.trim().split(/\\s+/) : []);\n          \n          horasArr.forEach(h => {\n            if (!h) return;\n            const parts = dateStr.split('-');\n            let ano, mes, dia;\n            if (parts[0].length === 4) { ano=Number(parts[0]); mes=Number(parts[1]); dia=Number(parts[2]); }\n            else { dia=Number(parts[0]); mes=Number(parts[1]); ano=Number(parts[2]); }\n\n            const hP = h.split(':');\n            const dtCompare = new Date(ano, mes-1, dia, Number(hP[0]||0), Number(hP[1]||0));\n            \n            if (dtCompare > agoraBRT) {\n              const dtUTC = new Date(Date.UTC(ano, mes-1, dia, 12, 0, 0));\n              const diaNome = diasSemana[dtUTC.getUTCDay()];\n              list.push({ \n                label: `${diaNome}, ${String(dia).padStart(2,'0')}/${String(mes).padStart(2,'0')} \\u00E0s ${h.substring(0,5)}`, \n                datetime: `${ano}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}T${h}`, \n                data_feegow: `${String(dia).padStart(2,'0')}-${String(mes).padStart(2,'0')}-${ano}`, \n                hora_inicio: h.substring(0,5),\n                local_id: Number(localKey),\n                doctor: docData\n              });\n            }\n          });\n        });\n      });\n    });\n  });\n  return list;\n}\n\nconst allSlots = processMap(profMap);\nconst uniqueSlotsMap = {};\nallSlots.forEach(s => {\n  if (!uniqueSlotsMap[s.datetime]) uniqueSlotsMap[s.datetime] = s;\n});\nconst uniqueSlots = Object.values(uniqueSlotsMap);\nuniqueSlots.sort((a, b) => a.datetime.localeCompare(b.datetime));\n\nreturn [{ json: { \n  slots: uniqueSlots, \n  doctorName: ctx.doctor?.nome || '', \n  isSemPref: !!ctx.doctor?.sem_preferência,\n  patientName: ctx.patient_name || ''\n} }];\n"
+      },
+      "id": "cal-api-h-3",
+      "name": "Fetch Slots Proxy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6600,
+        43200
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-clinica-api-confirmar",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "cal-api-c-1",
+      "name": "Webhook API Confirmar",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -7200,
+        43400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT context FROM user_states WHERE phone = '{{ $json.body.session }}'",
+        "options": {}
+      },
+      "id": "cal-api-c-2",
+      "name": "Get State para Confirmar",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [
+        -6900,
+        43400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "r1y1J2gyb8fLwkVR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const session = $node['Webhook API Confirmar'].json.body.session;\nconst selectedSlot = $node['Webhook API Confirmar'].json.body.slot;\nconst stateNode = $json;\n\nif (!stateNode || !stateNode.context || !selectedSlot) {\n  return [{ json: { success: false, error: 'Dados inválidos ou sessão expirada.' } }];\n}\n\nconst ctx = typeof stateNode.context === 'string' ? JSON.parse(stateNode.context) : stateNode.context;\n\n// Atualiza o contexto\nctx.selected_slot = selectedSlot;\nif (selectedSlot.doctor) {\n  ctx.doctor = selectedSlot.doctor;\n}\n\n// Formata a mensagem de confirmação\nlet dtStr = selectedSlot.label || 'Data selecionada';\ndtStr = dtStr.replace(/\\s*\\([^)]+\\)$/, ''); // Remove nome do médico do label se tiver\n\nlet preco = '';\nif (ctx.payment === 'particular' && ctx.doctor && ctx.doctor.valorParticular) {\n  preco = `\\n*Valor:* R$ ${Number(ctx.doctor.valorParticular).toFixed(2)}`;\n}\n\nconst displayCpf = ctx.patient_cpf ? ctx.patient_cpf.replace(/(\\d{3})(\\d{3})(\\d{3})(\\d{2})/, \"$1.$2.$3-$4\") : '';\n\nconst reply = `*Confirmar agendamento?*\\n\\n*Médico:* ${ctx.doctor ? ctx.doctor.nome : ''}\\n*Data/hora:* ${dtStr}\\n*Paciente:* ${ctx.patient_name || ''}\\n*CPF:* ${displayCpf}\\n*Atendimento:* ${ctx.payment === 'plano' ? 'Plano — ' + (ctx.plan || '') : 'Particular'}${preco}\\n\\n1️⃣ *Confirmar*\\n2️⃣ *Escolher outro horário*\\n3️⃣ *Cancelar*\\n\\n0️⃣ *Voltar ao menu*`;\n\nreturn [{\n  json: {\n    success: true,\n    phone: session,\n    state: 'CONFIRM_BOOKING',\n    context: ctx,\n    reply: reply\n  }\n}];\n"
+      },
+      "id": "cal-api-c-3",
+      "name": "Update State e Confirmar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -6600,
+        43400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE user_states SET state = '{{ $json.state }}', context = '{{ JSON.stringify($json.context) }}'::jsonb WHERE phone = '{{ $json.phone }}'",
+        "options": {}
+      },
+      "id": "cal-api-c-4",
+      "name": "Save State apos Confirmar",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [
+        -6300,
+        43400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "r1y1J2gyb8fLwkVR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://bot-clinicas-evolution-api-1:8080/message/sendText/clinica_bot",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "feegow_123456789"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "options",
+              "value": "={ \"delay\": 1200, \"presence\": \"composing\" }"
+            },
+            {
+              "name": "textMessage",
+              "parameters": {
+                "text": "={{ $json.reply }}"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cal-api-c-5",
+      "name": "Enviar Whats Confirmar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -6000,
+        43400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { success: true } }];"
+      },
+      "id": "cal-api-c-6",
+      "name": "Retornar Sucesso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5700,
+        43400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Agendamento - Clinica Inspire</title>\n  <!-- Google Fonts -->\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n  <link href=\"https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap\" rel=\"stylesheet\">\n  <!-- Flatpickr CSS -->\n  <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css\">\n  <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/material_blue.css\">\n  \n  <style>\n    :root {\n      --primary: #2563eb;\n      --primary-hover: #1d4ed8;\n      --bg: #0f172a;\n      --card-bg: #1e293b;\n      --text: #f8fafc;\n      --text-secondary: #94a3b8;\n      --border: #334155;\n      --success: #10b981;\n    }\n\n    * {\n      box-sizing: border-box;\n      margin: 0;\n      padding: 0;\n      font-family: 'Outfit', sans-serif;\n      -webkit-tap-highlight-color: transparent;\n    }\n\n    body {\n      background-color: var(--bg);\n      color: var(--text);\n      display: flex;\n      justify-content: center;\n      align-items: center;\n      min-height: 100vh;\n      padding: 16px;\n    }\n\n    .container {\n      background-color: var(--card-bg);\n      width: 100%;\n      max-width: 440px;\n      border-radius: 24px;\n      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);\n      border: 1px solid var(--border);\n      overflow: hidden;\n      display: flex;\n      flex-direction: column;\n      animation: fadeInUp 0.5s ease-out;\n    }\n\n    @keyframes fadeInUp {\n      from {\n        opacity: 0;\n        transform: translateY(20px);\n      }\n      to {\n        opacity: 1;\n        transform: translateY(0);\n      }\n    }\n\n    .header {\n      padding: 24px 20px;\n      background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);\n      border-bottom: 1px solid var(--border);\n      text-align: center;\n    }\n\n    .header h1 {\n      font-size: 20px;\n      font-weight: 600;\n      margin-bottom: 6px;\n      letter-spacing: -0.5px;\n    }\n\n    .header p {\n      font-size: 14px;\n      color: var(--text-secondary);\n    }\n\n    .doctor-info {\n      padding: 16px 20px;\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      background-color: rgba(255, 255, 255, 0.02);\n      border-bottom: 1px solid var(--border);\n    }\n\n    .doctor-avatar {\n      width: 44px;\n      height: 44px;\n      border-radius: 50px;\n      background-color: var(--primary);\n      display: flex;\n      justify-content: center;\n      align-items: center;\n      font-size: 20px;\n      font-weight: 600;\n      color: white;\n    }\n\n    .doctor-details h2 {\n      font-size: 15px;\n      font-weight: 600;\n    }\n\n    .doctor-details p {\n      font-size: 13px;\n      color: var(--text-secondary);\n    }\n\n    .content {\n      padding: 20px;\n      display: flex;\n      flex-direction: column;\n      gap: 20px;\n    }\n\n    .section-title {\n      font-size: 14px;\n      font-weight: 600;\n      text-transform: uppercase;\n      letter-spacing: 0.5px;\n      color: var(--text-secondary);\n      margin-bottom: 10px;\n    }\n\n    .calendar-container {\n      background-color: rgba(15, 23, 42, 0.4);\n      border-radius: 16px;\n      border: 1px solid var(--border);\n      padding: 8px;\n    }\n\n    .flatpickr-calendar {\n      background: transparent !important;\n      box-shadow: none !important;\n      border: none !important;\n      width: 100% !important;\n      max-width: 100% !important;\n    }\n\n    .flatpickr-day.selected {\n      background: var(--primary) !important;\n      border-color: var(--primary) !important;\n    }\n\n    .flatpickr-day:hover {\n      background: rgba(255, 255, 255, 0.1) !important;\n    }\n\n    .flatpickr-day.flatpickr-disabled {\n      color: rgba(255, 255, 255, 0.15) !important;\n    }\n\n    .flatpickr-day {\n      color: var(--text) !important;\n      border-radius: 8px !important;\n    }\n\n    .flatpickr-months .flatpickr-month,\n    .flatpickr-current-month,\n    .flatpickr-weekday {\n      color: var(--text) !important;\n      fill: var(--text) !important;\n    }\n\n    .hours-grid {\n      display: grid;\n      grid-template-columns: repeat(3, 1fr);\n      gap: 10px;\n      max-height: 160px;\n      overflow-y: auto;\n      padding-right: 4px;\n    }\n\n    .hours-grid::-webkit-scrollbar {\n      width: 6px;\n    }\n\n    .hours-grid::-webkit-scrollbar-thumb {\n      background-color: var(--border);\n      border-radius: 10px;\n    }\n\n    .hour-btn {\n      background-color: rgba(15, 23, 42, 0.4);\n      border: 1px solid var(--border);\n      color: var(--text);\n      padding: 12px 8px;\n      border-radius: 12px;\n      font-size: 14px;\n      font-weight: 500;\n      cursor: pointer;\n      transition: all 0.2s ease;\n      text-align: center;\n    }\n\n    .hour-btn:hover:not(:disabled) {\n      border-color: var(--primary);\n      background-color: rgba(37, 99, 235, 0.1);\n    }\n\n    .hour-btn.selected {\n      background-color: var(--primary);\n      border-color: var(--primary);\n      color: white;\n      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);\n    }\n\n    .footer {\n      padding: 20px;\n      border-top: 1px solid var(--border);\n      display: flex;\n      flex-direction: column;\n      gap: 12px;\n    }\n\n    .submit-btn {\n      background-color: var(--primary);\n      color: white;\n      border: none;\n      padding: 16px;\n      border-radius: 16px;\n      font-size: 16px;\n      font-weight: 600;\n      cursor: pointer;\n      transition: all 0.2s ease;\n      width: 100%;\n      display: flex;\n      justify-content: center;\n      align-items: center;\n      gap: 8px;\n    }\n\n    .submit-btn:hover:not(:disabled) {\n      background-color: var(--primary-hover);\n    }\n\n    .submit-btn:disabled {\n      background-color: var(--border);\n      color: var(--text-secondary);\n      cursor: not-allowed;\n    }\n\n    .loading-spinner {\n      border: 3px solid rgba(255, 255, 255, 0.1);\n      width: 24px;\n      height: 24px;\n      border-radius: 50%;\n      border-left-color: var(--text);\n      animation: spin 1s linear infinite;\n    }\n\n    @keyframes spin {\n      0% { transform: rotate(0deg); }\n      100% { transform: rotate(360deg); }\n    }\n\n    .skeleton {\n      background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);\n      background-size: 200% 100%;\n      animation: loading 1.5s infinite;\n      border-radius: 12px;\n    }\n\n    @keyframes loading {\n      0% { background-position: 200% 0; }\n      100% { background-position: -200% 0; }\n    }\n\n    .toast {\n      position: fixed;\n      bottom: 24px;\n      left: 50%;\n      transform: translateX(-50%) translateY(100px);\n      background-color: #ef4444;\n      color: white;\n      padding: 12px 24px;\n      border-radius: 50px;\n      font-size: 14px;\n      font-weight: 500;\n      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3);\n      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);\n      z-index: 1000;\n      white-space: nowrap;\n    }\n\n    .toast.show {\n      transform: translateX(-50%) translateY(0);\n    }\n\n    .success-screen {\n      padding: 40px 24px;\n      display: none;\n      flex-direction: column;\n      align-items: center;\n      text-align: center;\n      gap: 16px;\n      animation: scaleIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);\n    }\n\n    @keyframes scaleIn {\n      from { transform: scale(0.9); opacity: 0; }\n      to { transform: scale(1); opacity: 1; }\n    }\n\n    .success-icon {\n      width: 72px;\n      height: 72px;\n      border-radius: 50%;\n      background-color: rgba(16, 185, 129, 0.1);\n      color: var(--success);\n      display: flex;\n      justify-content: center;\n      align-items: center;\n      font-size: 36px;\n      margin-bottom: 8px;\n    }\n  </style>\n</head>\n<body>\n\n  <div class=\"container\" id=\"mainContainer\">\n    <div class=\"header\">\n      <h1>Escolha sua Consulta</h1>\n      <p>Selecione o melhor dia e horário</p>\n    </div>\n\n    <div class=\"doctor-info\">\n      <div class=\"doctor-avatar\" id=\"docAvatar\">🩺</div>\n      <div class=\"doctor-details\">\n        <h2 id=\"docName\">Carregando médico...</h2>\n        <p id=\"docSpecialty\">Agendamento Online</p>\n      </div>\n    </div>\n\n    <div class=\"content\">\n      <div>\n        <div class=\"section-title\">1. Selecione a Data</div>\n        <div class=\"calendar-container\">\n          <div id=\"calendarInline\"></div>\n        </div>\n      </div>\n\n      <div>\n        <div class=\"section-title\">2. Selecione o Horário</div>\n        <div class=\"hours-grid\" id=\"hoursGrid\">\n          <div class=\"hour-btn skeleton\" style=\"height: 45px;\"></div>\n          <div class=\"hour-btn skeleton\" style=\"height: 45px;\"></div>\n          <div class=\"hour-btn skeleton\" style=\"height: 45px;\"></div>\n        </div>\n      </div>\n    </div>\n\n    <div class=\"footer\">\n      <button class=\"submit-btn\" id=\"submitBtn\" disabled>\n        Confirmar Horário\n      </button>\n    </div>\n  </div>\n\n  <div class=\"container\" id=\"successContainer\" style=\"display: none;\">\n    <div class=\"success-screen\">\n      <div class=\"success-icon\">✓</div>\n      <h2>Horário Reservado!</h2>\n      <p id=\"successMsg\">Retorne ao WhatsApp para confirmar o seu agendamento.</p>\n    </div>\n  </div>\n\n  <div class=\"toast\" id=\"toast\">Ocorreu um erro. Tente novamente.</div>\n\n  <!-- Flatpickr JS -->\n  <script src=\"https://cdn.jsdelivr.net/npm/flatpickr\"></script>\n  <script src=\"https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js\"></script>\n\n  <script>\n    // Recupera parâmetros da URL\n    const urlParams = new URLSearchParams(window.location.search);\n    const session = urlParams.get('s');\n\n    let allSlots = [];\n    let selectedSlot = null;\n    let fp = null;\n\n    // Toast Helper\n    function showToast(msg) {\n      const toast = document.getElementById('toast');\n      toast.innerText = msg;\n      toast.classList.add('show');\n      setTimeout(() => toast.classList.remove('show'), 4000);\n    }\n\n    // Inicializa carregamento\n    async function init() {\n      if (!session) {\n        showToast('Sessão inválida.');\n        return;\n      }\n\n      try {\n        // Busca os horários via n8n Proxy\n        const response = await fetch(`./whatsapp-clinica-api-horarios?s=${session}`);\n        const data = await response.json();\n\n        if (data.error || !data.slots || data.slots.length === 0) {\n          showToast(data.error || 'Nenhum horário disponível encontrado.');\n          document.getElementById('hoursGrid').innerHTML = '<div style=\"grid-column: span 3; text-align: center; color: var(--text-secondary); padding: 20px;\">Nenhum horário disponível para este profissional.</div>';\n          return;\n        }\n\n        allSlots = data.slots;\n\n        // Configura médico na tela\n        const docName = data.doctorName || (data.isSemPref ? 'Sem preferência profissional' : 'Profissional de Saúde');\n        document.getElementById('docName').innerText = docName;\n        document.getElementById('docAvatar').innerText = data.isSemPref ? '🔵' : '🩺';\n        if (data.isSemPref) {\n          document.getElementById('docSpecialty').innerText = 'Busca Geral / Agendamento Inteligente';\n        } else if (data.doctorSpecialty) {\n          document.getElementById('docSpecialty').innerText = data.doctorSpecialty;\n        }\n\n        // Agrupa os dias com horários disponíveis\n        const availableDates = [...new Set(allSlots.map(s => s.data_feegow.split('-').reverse().join('-')))];\n\n        // Limpa grid de horas\n        document.getElementById('hoursGrid').innerHTML = '<div style=\"grid-column: span 3; text-align: center; color: var(--text-secondary); padding: 20px;\">Selecione um dia no calendário.</div>';\n\n        // Inicializa Flatpickr\n        fp = flatpickr(\"#calendarInline\", {\n          inline: true,\n          locale: \"pt\",\n          dateFormat: \"Y-m-d\",\n          minDate: \"today\",\n          enable: availableDates,\n          onChange: function(selectedDates, dateStr) {\n            renderHoursForDate(dateStr);\n          }\n        });\n\n      } catch (err) {\n        console.error(err);\n        showToast('Erro ao carregar horários disponíveis.');\n      }\n    }\n\n    function renderHoursForDate(dateStr) {\n      const grid = document.getElementById('hoursGrid');\n      grid.innerHTML = '';\n\n      // Formato dos slots do Feegow: dd-MM-yyyy\n      const [year, month, day] = dateStr.split('-');\n      const targetDateFeegow = `${day}-${month}-${year}`;\n\n      const filtered = allSlots.filter(s => s.data_feegow === targetDateFeegow);\n\n      if (filtered.length === 0) {\n        grid.innerHTML = '<div style=\"grid-column: span 3; text-align: center; color: var(--text-secondary); padding: 20px;\">Nenhum horário disponível.</div>';\n        return;\n      }\n\n      filtered.forEach(slot => {\n        const btn = document.createElement('button');\n        btn.className = 'hour-btn';\n        btn.innerText = slot.hora_inicio;\n        \n        // Se for \"Sem preferência\", mostra o médico em um balão/title ou como legenda curta\n        if (slot.doctor && slot.doctor.nome) {\n          btn.title = slot.doctor.nome;\n        }\n\n        btn.onclick = () => {\n          document.querySelectorAll('.hour-btn').forEach(b => b.classList.remove('selected'));\n          btn.classList.add('selected');\n          selectedSlot = slot;\n          document.getElementById('submitBtn').disabled = false;\n        };\n        grid.appendChild(btn);\n      });\n    }\n\n    // Confirmar Agendamento\n    document.getElementById('submitBtn').onclick = async () => {\n      if (!selectedSlot) return;\n\n      const btn = document.getElementById('submitBtn');\n      btn.disabled = true;\n      btn.innerHTML = '<div class=\"loading-spinner\"></div>';\n\n      try {\n        const res = await fetch('./whatsapp-clinica-api-confirmar', {\n          method: 'POST',\n          headers: { 'Content-Type': 'application/json' },\n          body: JSON.stringify({\n            session: session,\n            slot: selectedSlot\n          })\n        });\n\n        const rData = await res.json();\n        if (rData.success) {\n          document.getElementById('mainContainer').style.display = 'none';\n          document.getElementById('successContainer').style.display = 'flex';\n        } else {\n          showToast(rData.error || 'Erro ao enviar confirmação.');\n          btn.disabled = false;\n          btn.innerText = 'Confirmar Horário';\n        }\n      } catch (err) {\n        console.error(err);\n        showToast('Erro na conexão com o servidor.');\n        btn.disabled = false;\n        btn.innerText = 'Confirmar Horário';\n      }\n    };\n\n    window.onload = init;\n  </script>\n</body>\n</html>\n",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "cal-resp-1",
+      "name": "Respond HTML",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -6900,
+        43000
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Clínica": {
+      "main": [
+        [
+          {
+            "node": "Filtrar Loop e Grupos",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preparar Parâmetros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar Loop e Grupos": {
+      "main": [
+        [
+          {
+            "node": "Extrair Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Detectar Humano",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Deduplicar Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicar Mensagem": {
+      "main": [
+        [
+          {
+            "node": "É mensagem nova?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É mensagem nova?": {
+      "main": [
+        [
+          {
+            "node": "Dedup Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get State": {
+      "main": [
+        [
+          {
+            "node": "Verificar Pausa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Master Engine": {
+      "main": [
+        [
+          {
+            "node": "Switch Ação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Ação": {
+      "main": [
+        [
+          {
+            "node": "Resolver Paciente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Smart Fetch Slots",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver Paciente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver Paciente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "API Cancelar Evento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Formatar Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Criar Evento": {
+      "main": [
+        [
+          {
+            "node": "Notificar Médico (Agendamento)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificar Médico (Agendamento)": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp Médico (Agendamento)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Buscar Eventos": {
+      "main": [
+        [
+          {
+            "node": "Formatar Eventos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Cancelar Evento": {
+      "main": [
+        [
+          {
+            "node": "Notificar Médico (Cancelamento)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Formatar Cancelamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificar Médico (Cancelamento)": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp Médico (Cancelamento)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Slots": {
+      "main": [
+        [
+          {
+            "node": "Merge Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Eventos": {
+      "main": [
+        [
+          {
+            "node": "Merge Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Cancelamento": {
+      "main": [
+        [
+          {
+            "node": "Merge Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Reply": {
+      "main": [
+        [
+          {
+            "node": "Salvar Estado",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedup Postgres": {
+      "main": [
+        [
+          {
+            "node": "Get State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Diariamente às 08:00": {
+      "main": [
+        [
+          {
+            "node": "Config Clínica",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Parâmetros": {
+      "main": [
+        [
+          {
+            "node": "Buscar Eventos de Amanhã",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Eventos de Amanhã": {
+      "main": [
+        [
+          {
+            "node": "Extrair Pacientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Pacientes": {
+      "main": [
+        [
+          {
+            "node": "Enviar Lembrete WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Lembrete WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Salvar Estado Lembrete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detectar Humano": {
+      "main": [
+        [
+          {
+            "node": "Pausar Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Pausa": {
+      "main": [
+        [
+          {
+            "node": "Master Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver Paciente": {
+      "main": [
+        [
+          {
+            "node": "Rotear Após Paciente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rotear Após Paciente": {
+      "main": [
+        [
+          {
+            "node": "Merge Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "API Buscar Eventos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "API Criar Evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Utilitário IDs": {
+      "main": [
+        [
+          {
+            "node": "Get Cache for UI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Cache for UI": {
+      "main": [
+        [
+          {
+            "node": "Buscar IDs Feegow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar IDs Feegow": {
+      "main": [
+        [
+          {
+            "node": "Responder IDs HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar Cache (1h)": {
+      "main": [
+        [
+          {
+            "node": "Scanner Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scanner Logic": {
+      "main": [
+        [
+          {
+            "node": "Salvar no Banco",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Smart Fetch Slots": {
+      "main": [
+        [
+          {
+            "node": "Merge Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config para Scanner": {
+      "main": [
+        [
+          {
+            "node": "Scanner Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sincronizar Manualmente": {
+      "main": [
+        [
+          {
+            "node": "Config para Scanner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Cache": {
+      "main": [
+        [
+          {
+            "node": "Config Clínica",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook API Horarios": {
+      "main": [
+        [
+          {
+            "node": "Get State para Horarios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get State para Horarios": {
+      "main": [
+        [
+          {
+            "node": "Fetch Slots Proxy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook API Confirmar": {
+      "main": [
+        [
+          {
+            "node": "Get State para Confirmar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get State para Confirmar": {
+      "main": [
+        [
+          {
+            "node": "Update State e Confirmar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update State e Confirmar": {
+      "main": [
+        [
+          {
+            "node": "Save State apos Confirmar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save State apos Confirmar": {
+      "main": [
+        [
+          {
+            "node": "Enviar Whats Confirmar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Whats Confirmar": {
+      "main": [
+        [
+          {
+            "node": "Retornar Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Calendario": {
+      "main": [
+        [
+          {
+            "node": "Respond HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "a4376f12-5fc8-404d-b996-51709f6a5555",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3996adca67689462cd8debef94c8e6ab927993668e576acfde7653e5a72d8dfc"
+  },
+  "id": "skoJDW9mIcwM0udx",
+  "tags": []
+}
